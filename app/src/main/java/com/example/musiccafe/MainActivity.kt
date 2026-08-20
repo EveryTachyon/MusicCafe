@@ -5,23 +5,36 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,8 +45,13 @@ import androidx.compose.ui.unit.sp
 import com.example.musiccafe.ui.theme.MusicCafeTheme
 
 private val SidebarBackground = Color(0xFF100E13)
+private val ContentBackground = Color(0xFF18161C)
 private val SidebarText = Color(0xFF8B898C)
 private val AccentGreen = Color(0xFF00D51B)
+private val CardBackground = Color(0xFF242128)
+private val SoftText = Color(0xFFB9B6BC)
+
+private val libraryItems = listOf("Playlists", "Tracks", "Artists", "Albums", "Import songs")
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -41,7 +59,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MusicCafeTheme {
-                MusicCafeSidebar()
+                MusicCafeApp()
             }
         }
     }
@@ -49,51 +67,78 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MusicCafeSidebar() {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = SidebarBackground
-    ) {
-        Column(
-            modifier = Modifier
-                .width(240.dp)
-                .fillMaxHeight()
-                .background(SidebarBackground)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.Top
-        ) {
-            BrandHeader()
-            Spacer(modifier = Modifier.height(42.dp))
-            SidebarItem(icon = Icons.Outlined.Home, label = "Home")
-            Spacer(modifier = Modifier.height(26.dp))
-            SidebarSection(title = "Library")
-            SidebarItem(label = "Playlists")
-            SidebarItem(label = "Tracks")
-            SidebarItem(label = "Artists")
-            SidebarItem(label = "Albums")
-            SidebarItem(label = "Import songs")
-            Spacer(modifier = Modifier.height(54.dp))
-            SidebarSection(title = "Playlists")
-            SidebarItem(icon = Icons.Outlined.PlaylistAdd, label = "Create playlist")
+    MusicCafeApp()
+}
+
+@Composable
+private fun MusicCafeApp() {
+    var selectedItem by remember { mutableStateOf("Home") }
+    var isSidebarOpen by remember { mutableStateOf(true) }
+
+    Box(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
+        LandingContent(
+            selectedItem = selectedItem,
+            onOpenSidebar = { isSidebarOpen = true }
+        )
+        if (isSidebarOpen) {
+            MusicCafeNavigation(
+                selectedItem = selectedItem,
+                onItemSelected = {
+                    selectedItem = it
+                    isSidebarOpen = false
+                },
+                onClose = { isSidebarOpen = false }
+            )
         }
     }
 }
 
 @Composable
-private fun BrandHeader() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = Icons.Outlined.MusicNote,
-            contentDescription = null,
-            tint = AccentGreen,
-            modifier = Modifier.width(48.dp)
-        )
-        Text(
-            text = "eSound",
-            color = Color.White,
-            fontSize = 40.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp)
-        )
+private fun MusicCafeNavigation(
+    selectedItem: String,
+    onItemSelected: (String) -> Unit,
+    onClose: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(240.dp)
+            .fillMaxHeight()
+            .background(SidebarBackground)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.Top
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "MusicCafe",
+                color = Color.White,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
+            IconButton(onClick = onClose) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "Close sidebar",
+                    tint = SidebarText
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(34.dp))
+        SidebarItem("Home", selectedItem, onItemSelected)
+        Spacer(modifier = Modifier.height(24.dp))
+        SidebarSection(title = "Library")
+        libraryItems.forEach { item ->
+            SidebarItem(item, selectedItem, onItemSelected)
+        }
+        Spacer(modifier = Modifier.height(36.dp))
+        SidebarSection(title = "Playlists")
+        SidebarItem("Create playlist", selectedItem, onItemSelected)
+        Spacer(modifier = Modifier.weight(1f))
+        SidebarItem("Settings", selectedItem, onItemSelected)
     }
 }
 
@@ -111,37 +156,105 @@ private fun SidebarSection(title: String) {
 @Composable
 private fun SidebarItem(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null
+    selectedItem: String,
+    onItemSelected: (String) -> Unit
 ) {
     Row(
         modifier = Modifier
             .height(64.dp)
-            .padding(horizontal = 0.dp),
+            .fillMaxWidth()
+            .background(
+                color = if (label == selectedItem) Color(0xFF28252D) else Color.Transparent,
+                shape = RoundedCornerShape(6.dp)
+            )
+            .clickable { onItemSelected(label) }
+            .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (icon != null) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = SidebarText,
-                modifier = Modifier.width(40.dp)
-            )
-        } else {
-            Spacer(modifier = Modifier.width(0.dp))
-        }
         Text(
             text = label,
-            color = SidebarText,
-            fontSize = 25.sp,
-            modifier = Modifier.padding(start = if (icon == null) 0.dp else 16.dp)
+            color = if (label == selectedItem) AccentGreen else SidebarText,
+            fontSize = 20.sp,
+            fontWeight = if (label == selectedItem) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
-@Preview(showBackground = true, widthDp = 240, heightDp = 800)
 @Composable
-private fun MusicCafeSidebarPreview() {
+private fun LandingContent(selectedItem: String, onOpenSidebar: () -> Unit) {
+    val details = when (selectedItem) {
+        "Home" -> PageDetails("Welcome back", "Your music, gathered in one place.", listOf("Recently played", "Made for you", "New additions"))
+        "Playlists" -> PageDetails("Your playlists", "Organize the songs that belong together.", listOf("Morning commute", "Late night", "Favorites"))
+        "Tracks" -> PageDetails("Tracks", "Browse every song in your MusicCafe library.", listOf("No tracks imported yet", "Import songs to start building your library"))
+        "Artists" -> PageDetails("Artists", "Find music by the people who made it.", listOf("Your artists will appear here"))
+        "Albums" -> PageDetails("Albums", "Keep complete records together.", listOf("Your albums will appear here"))
+        "Import songs" -> PageDetails("Import songs", "Bring your local collection into MusicCafe.", listOf("Choose a folder", "Scan for audio files", "Review imported songs"))
+        "Settings" -> PageDetails("Settings", "Manage your MusicCafe preferences.", listOf("Playback", "Appearance", "Library settings"))
+        else -> PageDetails("Create playlist", "Start a new collection for any mood.", listOf("Name your playlist", "Add songs", "Save playlist"))
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 40.dp, vertical = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onOpenSidebar) {
+                    Icon(
+                        imageVector = Icons.Outlined.Menu,
+                        contentDescription = "Open sidebar",
+                        tint = Color.White
+                    )
+                }
+                Text(
+                    text = details.title,
+                    color = Color.White,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+            Text(
+                text = details.subtitle,
+                color = SoftText,
+                fontSize = 18.sp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        items(details.cards) { cardTitle ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = CardBackground),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = cardTitle,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+    }
+}
+
+private data class PageDetails(
+    val title: String,
+    val subtitle: String,
+    val cards: List<String>
+)
+
+@Preview(showBackground = true, widthDp = 900, heightDp = 800)
+@Composable
+private fun MusicCafePreview() {
     MusicCafeTheme(dynamicColor = false, darkTheme = true) {
-        MusicCafeSidebar()
+        MusicCafeApp()
     }
 }
