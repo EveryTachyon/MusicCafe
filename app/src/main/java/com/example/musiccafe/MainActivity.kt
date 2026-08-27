@@ -1,7 +1,11 @@
 package com.example.musiccafe
 
+import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -35,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -72,13 +77,30 @@ fun MusicCafeSidebar() {
 
 @Composable
 private fun MusicCafeApp() {
+    val context = LocalContext.current
     var selectedItem by remember { mutableStateOf("Home") }
     var isSidebarOpen by remember { mutableStateOf(true) }
+    var importedSongs by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val chooseFolder = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { folderUri ->
+        if (folderUri != null) {
+            importedSongs = scanAudioFiles(context.contentResolver, folderUri)
+        }
+    }
+    val chooseAudioFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { audioUris ->
+        importedSongs = audioUris
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
         LandingContent(
             selectedItem = selectedItem,
-            onOpenSidebar = { isSidebarOpen = true }
+            onOpenSidebar = { isSidebarOpen = true },
+            importedSongs = importedSongs,
+            onChooseFolder = { chooseFolder.launch(null) },
+            onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) }
         )
         if (isSidebarOpen) {
             MusicCafeNavigation(
@@ -182,7 +204,13 @@ private fun SidebarItem(
 }
 
 @Composable
-private fun LandingContent(selectedItem: String, onOpenSidebar: () -> Unit) {
+private fun LandingContent(
+    selectedItem: String,
+    onOpenSidebar: () -> Unit,
+    importedSongs: List<Uri>,
+    onChooseFolder: () -> Unit,
+    onChooseAudioFiles: () -> Unit
+) {
     val details = when (selectedItem) {
         "Home" -> PageDetails("Welcome back", "Your music, gathered in one place.", listOf("Recently played", "Made for you", "New additions"))
         "Playlists" -> PageDetails("Your playlists", "Organize the songs that belong together.", listOf("Morning commute", "Late night", "Favorites"))
@@ -229,7 +257,14 @@ private fun LandingContent(selectedItem: String, onOpenSidebar: () -> Unit) {
         }
         items(details.cards) { cardTitle ->
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        when {
+                            selectedItem == "Import songs" && cardTitle == "Choose a folder" -> onChooseFolder()
+                            selectedItem == "Import songs" && cardTitle == "Scan for audio files" -> onChooseAudioFiles()
+                        }
+                    },
                 colors = CardDefaults.cardColors(containerColor = CardBackground),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -239,6 +274,17 @@ private fun LandingContent(selectedItem: String, onOpenSidebar: () -> Unit) {
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+        if (selectedItem == "Import songs" && importedSongs.isNotEmpty()) {
+            item {
+                Text(
+                    text = "${importedSongs.size} item${if (importedSongs.size == 1) "" else "s"} ready to review",
+                    color = AccentGreen,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
         }
@@ -257,4 +303,39 @@ private fun MusicCafePreview() {
     MusicCafeTheme(dynamicColor = false, darkTheme = true) {
         MusicCafeApp()
     }
+}
+
+private fun scanAudioFiles(contentResolver: android.content.ContentResolver, treeUri: Uri): List<Uri> {
+    val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+    val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootDocumentId)
+    return scanAudioFiles(contentResolver, childUri, treeUri)
+}
+
+private fun scanAudioFiles(
+    contentResolver: android.content.ContentResolver,
+    directoryUri: Uri,
+    treeUri: Uri
+): List<Uri> {
+    val audioFiles = mutableListOf<Uri>()
+    val projection = arrayOf(
+        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        DocumentsContract.Document.COLUMN_MIME_TYPE
+    )
+
+    contentResolver.query(directoryUri, projection, null, null, null)?.use { cursor ->
+        val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        while (cursor.moveToNext()) {
+            val documentId = cursor.getString(idColumn)
+            val mimeType = cursor.getString(mimeColumn)
+            val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+            if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+                audioFiles += scanAudioFiles(contentResolver, childrenUri, treeUri)
+            } else if (mimeType.startsWith("audio/")) {
+                audioFiles += documentUri
+            }
+        }
+    }
+    return audioFiles
 }
