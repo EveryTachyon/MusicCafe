@@ -1,7 +1,6 @@
 package com.example.musiccafe
 
-import android.accounts.AccountManager
-import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.media.MediaPlayer
 import android.os.Bundle
@@ -11,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.net.toFile
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,7 +54,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -97,40 +96,26 @@ private fun MusicCafeApp() {
     var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var downloadedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
-    var googleDriveEmail by remember { mutableStateOf<String?>(null) }
-    var pendingGoogleDriveEmail by remember { mutableStateOf<String?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    val scope = rememberCoroutineScope()
     val chooseAudioFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { audioUris ->
-        importedSongs = audioUris
+        val validAudioUris = audioUris.filter { uri -> isSupportedAudioUri(context.contentResolver, uri) }
+        validAudioUris.forEach { uri -> persistReadPermission(context, uri) }
+        importedSongs = (importedSongs + validAudioUris).distinct()
     }
     val chooseGoogleDriveFiles = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { folderUri ->
-        if (folderUri != null) {
-            googleDriveEmail = pendingGoogleDriveEmail
-            val audioUris = scanAudioFiles(context.contentResolver, folderUri)
-            importedSongs = audioUris
-            scope.launch {
-                val downloaded = withContext(Dispatchers.IO) {
-                    audioUris.filter { uri -> downloadAudioFile(context, uri) }.toSet()
-                }
-                downloadedSongs = downloaded
-            }
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        if (!isSupportedAudioUri(context.contentResolver, uri)) return@rememberLauncherForActivityResult
+        persistReadPermission(context, uri)
+        val savedUri = copyUriToAppStorage(context, uri)
+        if (savedUri != null) {
+            importedSongs = (importedSongs + savedUri).distinct()
+            downloadedSongs = downloadedSongs + savedUri
         }
     }
-    val chooseGoogleAccount = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val accountEmail = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-        if (result.resultCode == Activity.RESULT_OK && !accountEmail.isNullOrBlank()) {
-            pendingGoogleDriveEmail = accountEmail
-            chooseGoogleDriveFiles.launch(null)
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
         Box(modifier = Modifier.weight(1f)) {
             LandingContent(
@@ -163,11 +148,8 @@ private fun MusicCafeApp() {
                     playlists = playlists + Playlist(name, songs)
                     selectedItem = "Library"
                 },
-                googleDriveEmail = googleDriveEmail,
                 onChooseGoogleDriveFiles = {
-                    chooseGoogleAccount.launch(
-                        AccountManager.newChooseAccountIntent(null, null, arrayOf("com.google"), null, null, null, null)
-                    )
+                    chooseGoogleDriveFiles.launch(arrayOf("audio/*", "application/octet-stream"))
                 }
             )
         }
@@ -229,7 +211,6 @@ private fun LandingContent(
     onOpenCreatePlaylist: () -> Unit,
     playlists: List<Playlist>,
     onSavePlaylist: (String, Set<Uri>) -> Unit,
-    googleDriveEmail: String?,
     onChooseGoogleDriveFiles: () -> Unit
 ) {
     if (selectedItem == "Import songs") {
@@ -237,7 +218,6 @@ private fun LandingContent(
             onBack = onBackFromImport,
             importedSongs = importedSongs,
             downloadedSongs = downloadedSongs,
-            googleDriveEmail = googleDriveEmail,
             onChooseAudioFiles = onChooseAudioFiles,
             onChooseGoogleDriveFiles = onChooseGoogleDriveFiles
         )
@@ -415,7 +395,6 @@ private fun ImportSongsContent(
     onBack: () -> Unit,
     importedSongs: List<Uri>,
     downloadedSongs: Set<Uri>,
-    googleDriveEmail: String?,
     onChooseAudioFiles: () -> Unit,
     onChooseGoogleDriveFiles: () -> Unit
 ) {
@@ -459,11 +438,7 @@ private fun ImportSongsContent(
             ImportSourceRow("Device", onChooseAudioFiles)
         }
         item {
-            if (googleDriveEmail != null) {
-                GoogleDriveAccountCard(googleDriveEmail, onChooseGoogleDriveFiles)
-            } else {
-                ImportSourceRow("Google Drive", onChooseGoogleDriveFiles)
-            }
+            ImportSourceRow("Google Drive", onChooseGoogleDriveFiles)
         }
         if (importedSongs.isNotEmpty()) {
             item {
@@ -584,17 +559,51 @@ private fun displayName(contentResolver: android.content.ContentResolver, uri: U
     return uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file"
 }
 
-private fun downloadAudioFile(context: android.content.Context, uri: Uri): Boolean {
-    val fileName = displayName(context.contentResolver, uri)
-        .replace(Regex("[^A-Za-z0-9._-]"), "_")
-    val destination = java.io.File(context.filesDir, fileName)
+private fun persistReadPermission(context: android.content.Context, uri: Uri) {
+    try {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    } catch (_: SecurityException) {
+    }
+}
+
+fun isSupportedAudioMimeType(mimeType: String?): Boolean {
+    if (mimeType.isNullOrBlank()) return false
+    val normalized = mimeType.lowercase()
+    return normalized.startsWith("audio/") ||
+        normalized.endsWith(".mp3") ||
+        normalized.endsWith(".wav") ||
+        normalized.endsWith(".m4a") ||
+        normalized.endsWith(".aac") ||
+        normalized.endsWith(".ogg")
+}
+
+fun sanitizeFileName(fileName: String): String {
+    val trimmed = fileName.trim()
+    val safe = trimmed.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    return if (safe.isBlank()) "audio_file" else safe
+}
+
+private fun isSupportedAudioUri(contentResolver: android.content.ContentResolver, uri: Uri): Boolean {
+    val mimeType = contentResolver.getType(uri)
+    return isSupportedAudioMimeType(mimeType)
+}
+
+private fun copyUriToAppStorage(context: android.content.Context, uri: Uri): Uri? {
     return try {
+        val originalName = displayName(context.contentResolver, uri)
+        val safeFileName = sanitizeFileName(originalName)
+        val destination = java.io.File(context.filesDir, safeFileName)
         context.contentResolver.openInputStream(uri)?.use { input ->
             destination.outputStream().use { output -> input.copyTo(output) }
-        } != null
-    } catch (_: java.io.IOException) {
-        false
+        }
+        Uri.fromFile(destination)
+    } catch (_: Exception) {
+        null
     }
+}
+
+private fun downloadAudioFile(context: android.content.Context, uri: Uri): Boolean {
+    return copyUriToAppStorage(context, uri) != null
 }
 
 @Preview(showBackground = true, widthDp = 900, heightDp = 800)
