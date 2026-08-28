@@ -1,5 +1,8 @@
 package com.example.musiccafe
 
+import android.accounts.AccountManager
+import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -26,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
@@ -38,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -48,6 +53,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.musiccafe.ui.theme.MusicCafeTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val SidebarBackground = Color(0xFF100E13)
 private val ContentBackground = Color(0xFF18161C)
@@ -81,6 +89,10 @@ private fun MusicCafeApp() {
     var selectedItem by remember { mutableStateOf("Home") }
     var isSidebarOpen by remember { mutableStateOf(true) }
     var importedSongs by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var downloadedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
+    var googleDriveEmail by remember { mutableStateOf<String?>(null) }
+    var pendingGoogleDriveEmail by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val chooseFolder = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { folderUri ->
@@ -93,14 +105,53 @@ private fun MusicCafeApp() {
     ) { audioUris ->
         importedSongs = audioUris
     }
+    val chooseGoogleDriveFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { folderUri ->
+        if (folderUri != null) {
+            googleDriveEmail = pendingGoogleDriveEmail
+            val audioUris = scanAudioFiles(context.contentResolver, folderUri)
+            importedSongs = audioUris
+            scope.launch {
+                val downloaded = withContext(Dispatchers.IO) {
+                    audioUris.filter { uri -> downloadAudioFile(context, uri) }.toSet()
+                }
+                downloadedSongs = downloaded
+            }
+        }
+    }
+    val chooseGoogleAccount = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val accountEmail = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        if (result.resultCode == Activity.RESULT_OK && !accountEmail.isNullOrBlank()) {
+            pendingGoogleDriveEmail = accountEmail
+            chooseGoogleDriveFiles.launch(null)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
         LandingContent(
             selectedItem = selectedItem,
             onOpenSidebar = { isSidebarOpen = true },
             importedSongs = importedSongs,
+            downloadedSongs = downloadedSongs,
             onChooseFolder = { chooseFolder.launch(null) },
-            onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) }
+            onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) },
+            googleDriveEmail = googleDriveEmail,
+            onChooseGoogleDriveFiles = {
+                chooseGoogleAccount.launch(
+                    AccountManager.newChooseAccountIntent(
+                        null,
+                        null,
+                        arrayOf("com.google"),
+                        null,
+                        null,
+                        null,
+                        null
+                    )
+                )
+            }
         )
         if (isSidebarOpen) {
             MusicCafeNavigation(
@@ -208,16 +259,30 @@ private fun LandingContent(
     selectedItem: String,
     onOpenSidebar: () -> Unit,
     importedSongs: List<Uri>,
+    downloadedSongs: Set<Uri>,
     onChooseFolder: () -> Unit,
-    onChooseAudioFiles: () -> Unit
+    onChooseAudioFiles: () -> Unit,
+    googleDriveEmail: String?,
+    onChooseGoogleDriveFiles: () -> Unit
 ) {
+    if (selectedItem == "Import songs") {
+        ImportSongsContent(
+            onOpenSidebar = onOpenSidebar,
+            importedSongs = importedSongs,
+            downloadedSongs = downloadedSongs,
+            googleDriveEmail = googleDriveEmail,
+            onChooseAudioFiles = onChooseAudioFiles,
+            onChooseGoogleDriveFiles = onChooseGoogleDriveFiles
+        )
+        return
+    }
+
     val details = when (selectedItem) {
         "Home" -> PageDetails("Welcome back", "Your music, gathered in one place.", listOf("Recently played", "Made for you", "New additions"))
         "Playlists" -> PageDetails("Your playlists", "Organize the songs that belong together.", listOf("Morning commute", "Late night", "Favorites"))
         "Tracks" -> PageDetails("Tracks", "Browse every song in your MusicCafe library.", listOf("No tracks imported yet", "Import songs to start building your library"))
         "Artists" -> PageDetails("Artists", "Find music by the people who made it.", listOf("Your artists will appear here"))
         "Albums" -> PageDetails("Albums", "Keep complete records together.", listOf("Your albums will appear here"))
-        "Import songs" -> PageDetails("Import songs", "Bring your local collection into MusicCafe.", listOf("Choose a folder", "Scan for audio files", "Review imported songs"))
         "Settings" -> PageDetails("Settings", "Manage your MusicCafe preferences.", listOf("Playback", "Appearance", "Library settings"))
         else -> PageDetails("Create playlist", "Start a new collection for any mood.", listOf("Name your playlist", "Add songs", "Save playlist"))
     }
@@ -288,6 +353,193 @@ private fun LandingContent(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ImportSongsContent(
+    onOpenSidebar: () -> Unit,
+    importedSongs: List<Uri>,
+    downloadedSongs: Set<Uri>,
+    googleDriveEmail: String?,
+    onChooseAudioFiles: () -> Unit,
+    onChooseGoogleDriveFiles: () -> Unit
+) {
+    val context = LocalContext.current
+    val songNames = remember(importedSongs) {
+        importedSongs.map { uri -> uri to displayName(context.contentResolver, uri) }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp, vertical = 28.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 42.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onOpenSidebar) {
+                    Icon(
+                        imageVector = Icons.Outlined.Menu,
+                        contentDescription = "Back to library",
+                        tint = Color.White
+                    )
+                }
+                Text(
+                    text = "Import songs",
+                    color = Color.White,
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.Normal,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Spacer(modifier = Modifier.width(48.dp))
+            }
+        }
+        item {
+            ImportSourceRow("Device", onChooseAudioFiles)
+        }
+        item {
+            if (googleDriveEmail != null) {
+                GoogleDriveAccountCard(googleDriveEmail, onChooseGoogleDriveFiles)
+            } else {
+                ImportSourceRow("Google Drive", onChooseGoogleDriveFiles)
+            }
+        }
+        if (importedSongs.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Music",
+                    color = AccentGreen,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            items(songNames) { (uri, songName) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(CardBackground, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = songName, color = Color.White, fontSize = 19.sp)
+                        Text(
+                            text = if (uri in downloadedSongs) "Downloaded" else "Not downloaded",
+                            color = if (uri in downloadedSongs) AccentGreen else SoftText,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    androidx.compose.material3.Checkbox(
+                        checked = uri in downloadedSongs,
+                        onCheckedChange = null
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImportSourceRow(name: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(136.dp)
+            .background(CardBackground, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 36.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = name,
+            color = Color.White,
+            fontSize = 27.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun GoogleDriveAccountCard(email: String, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 36.dp, vertical = 18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Google Drive",
+                        color = Color.White,
+                        fontSize = 27.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "285 MB / 15 GB used",
+                        color = SoftText,
+                        fontSize = 18.sp,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                CircularProgressIndicator(
+                    progress = { 0.019f },
+                    color = AccentGreen,
+                    trackColor = SidebarBackground,
+                    strokeWidth = 8.dp,
+                    modifier = Modifier.width(56.dp).height(56.dp)
+                )
+            }
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp)
+                    .height(1.dp)
+                    .background(Color(0xFF3A3740))
+            )
+            Text(
+                text = email,
+                color = Color.White,
+                fontSize = 18.sp,
+                modifier = Modifier.padding(top = 18.dp)
+            )
+        }
+    }
+}
+
+private fun displayName(contentResolver: android.content.ContentResolver, uri: Uri): String {
+    val nameColumn = android.provider.OpenableColumns.DISPLAY_NAME
+    contentResolver.query(uri, arrayOf(nameColumn), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            return cursor.getString(cursor.getColumnIndexOrThrow(nameColumn))
+        }
+    }
+    return uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file"
+}
+
+private fun downloadAudioFile(context: android.content.Context, uri: Uri): Boolean {
+    val fileName = displayName(context.contentResolver, uri)
+        .replace(Regex("[^A-Za-z0-9._-]"), "_")
+    val destination = java.io.File(context.filesDir, fileName)
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            destination.outputStream().use { output -> input.copyTo(output) }
+        } != null
+    } catch (_: java.io.IOException) {
+        false
     }
 }
 
