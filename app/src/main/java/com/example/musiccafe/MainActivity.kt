@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,10 +23,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,8 +40,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.List
 import androidx.compose.material.icons.outlined.Menu
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Cast
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,8 +101,11 @@ fun MusicCafeSidebar() {
 private fun MusicCafeApp() {
     val context = LocalContext.current
     var selectedItem by remember { mutableStateOf("Home") }
-    var isSidebarOpen by remember { mutableStateOf(true) }
+    var isSidebarOpen by remember { mutableStateOf(false) }
     var importedSongs by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+    var playingSong by remember { mutableStateOf<String?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
     var downloadedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
     var googleDriveEmail by remember { mutableStateOf<String?>(null) }
     var pendingGoogleDriveEmail by remember { mutableStateOf<String?>(null) }
@@ -130,39 +147,69 @@ private fun MusicCafeApp() {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
-        LandingContent(
-            selectedItem = selectedItem,
-            onOpenSidebar = { isSidebarOpen = true },
-            importedSongs = importedSongs,
-            downloadedSongs = downloadedSongs,
-            onChooseFolder = { chooseFolder.launch(null) },
-            onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) },
-            googleDriveEmail = googleDriveEmail,
-            onChooseGoogleDriveFiles = {
-                chooseGoogleAccount.launch(
-                    AccountManager.newChooseAccountIntent(
-                        null,
-                        null,
-                        arrayOf("com.google"),
-                        null,
-                        null,
-                        null,
-                        null
-                    )
-                )
-            }
-        )
-        if (isSidebarOpen) {
-            MusicCafeNavigation(
+    Column(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
+        Box(modifier = Modifier.weight(1f)) {
+            LandingContent(
                 selectedItem = selectedItem,
-                onItemSelected = {
-                    selectedItem = it
-                    isSidebarOpen = false
+                onOpenSidebar = { isSidebarOpen = true },
+                importedSongs = importedSongs,
+                downloadedSongs = downloadedSongs,
+                onChooseFolder = { chooseFolder.launch(null) },
+                onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) },
+                onOpenSavedSongs = { selectedItem = "Saved songs" },
+                onBackToLibrary = { selectedItem = "Library" },
+                onPlaySong = { song -> playingSong = song; isPlaying = true },
+                onOpenImportSongs = { selectedItem = "Import songs" },
+                onOpenCreatePlaylist = { selectedItem = "Create playlist" },
+                playlists = playlists,
+                onSavePlaylist = { name, songs ->
+                    playlists = playlists + Playlist(name, songs)
+                    selectedItem = "Library"
                 },
-                onClose = { isSidebarOpen = false }
+                googleDriveEmail = googleDriveEmail,
+                onChooseGoogleDriveFiles = {
+                    chooseGoogleAccount.launch(
+                        AccountManager.newChooseAccountIntent(null, null, arrayOf("com.google"), null, null, null, null)
+                    )
+                }
             )
         }
+        if (playingSong != null) {
+            MiniPlayer(playingSong!!, isPlaying) { isPlaying = !isPlaying }
+        }
+        BottomNavigationBar(selectedItem) { selectedItem = it }
+        if (isSidebarOpen) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                MusicCafeNavigation(selectedItem, { selectedItem = it; isSidebarOpen = false }) { isSidebarOpen = false }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomNavigationBar(selectedItem: String, onItemSelected: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().background(Color(0xFF100E13)).padding(horizontal = 20.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceAround
+    ) {
+        BottomNavigationItem("Home", Icons.Outlined.Home, selectedItem, onItemSelected)
+        BottomNavigationItem("Library", Icons.Outlined.LibraryMusic, selectedItem, onItemSelected)
+    }
+}
+
+@Composable
+private fun BottomNavigationItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selectedItem: String,
+    onItemSelected: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.width(76.dp).clickable { onItemSelected(label) },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = if (selectedItem == label) AccentGreen else SidebarText, modifier = Modifier.height(30.dp))
+        Text(label, color = if (selectedItem == label) AccentGreen else SidebarText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -262,6 +309,13 @@ private fun LandingContent(
     downloadedSongs: Set<Uri>,
     onChooseFolder: () -> Unit,
     onChooseAudioFiles: () -> Unit,
+    onOpenSavedSongs: () -> Unit,
+    onBackToLibrary: () -> Unit,
+    onPlaySong: (String) -> Unit,
+    onOpenImportSongs: () -> Unit,
+    onOpenCreatePlaylist: () -> Unit,
+    playlists: List<Playlist>,
+    onSavePlaylist: (String, Set<Uri>) -> Unit,
     googleDriveEmail: String?,
     onChooseGoogleDriveFiles: () -> Unit
 ) {
@@ -277,81 +331,189 @@ private fun LandingContent(
         return
     }
 
-    val details = when (selectedItem) {
-        "Home" -> PageDetails("Welcome back", "Your music, gathered in one place.", listOf("Recently played", "Made for you", "New additions"))
-        "Playlists" -> PageDetails("Your playlists", "Organize the songs that belong together.", listOf("Morning commute", "Late night", "Favorites"))
-        "Tracks" -> PageDetails("Tracks", "Browse every song in your MusicCafe library.", listOf("No tracks imported yet", "Import songs to start building your library"))
-        "Artists" -> PageDetails("Artists", "Find music by the people who made it.", listOf("Your artists will appear here"))
-        "Albums" -> PageDetails("Albums", "Keep complete records together.", listOf("Your albums will appear here"))
-        "Settings" -> PageDetails("Settings", "Manage your MusicCafe preferences.", listOf("Playback", "Appearance", "Library settings"))
-        else -> PageDetails("Create playlist", "Start a new collection for any mood.", listOf("Name your playlist", "Add songs", "Save playlist"))
+    when (selectedItem) {
+        "Library" -> LibraryContent(importedSongs, onOpenSidebar, onChooseAudioFiles, onOpenSavedSongs, playlists, onOpenCreatePlaylist)
+        "Saved songs" -> SavedSongsContent(importedSongs, onChooseAudioFiles, onBackToLibrary, onPlaySong, onOpenImportSongs)
+        "Create playlist" -> CreatePlaylistContent(importedSongs, downloadedSongs, onSavePlaylist, onBackToLibrary)
+        else -> HomeContent(onOpenSidebar, onOpenSavedSongs, playlists)
+    }
+}
+
+@Composable
+private fun HomeContent(
+    onOpenSidebar: () -> Unit,
+    onOpenSavedSongs: () -> Unit,
+    playlists: List<Playlist>
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("MusicCafe", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                IconButton(onClick = onOpenSidebar) {
+                    Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = Color.White)
+                }
+            }
+        }
+        item {
+            Text("Saved songs", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 22.dp))
+        }
+        item {
+            LazyRow(contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 22.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                item { HomeCollectionCard("Saved songs", onOpenSavedSongs) }
+                items(playlists) { playlist -> HomeCollectionCard(playlist.name) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeCollectionCard(title: String, onClick: () -> Unit = {}) {
+    Row(
+        modifier = Modifier.width(250.dp).height(86.dp).background(CardBackground, RoundedCornerShape(12.dp)).clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.width(96.dp).fillMaxHeight().background(Color(0xFF1F1D23), RoundedCornerShape(12.dp)))
+        Text(title, color = Color.White, fontSize = 17.sp, maxLines = 2, modifier = Modifier.padding(horizontal = 14.dp))
+    }
+}
+
+@Composable
+private fun PlaylistCard(title: String, color: Color) {
+    Column(modifier = Modifier.width(160.dp).height(166.dp).background(color, RoundedCornerShape(12.dp)).padding(14.dp)) {
+        Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.height(28.dp))
+        Spacer(Modifier.weight(1f))
+        Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun AdvertisingBlock() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Text("ADVERTISING", color = Color.White, fontSize = 14.sp, letterSpacing = 1.sp)
+        Spacer(Modifier.height(10.dp))
+        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 42.dp).height(78.dp).background(CardBackground, RoundedCornerShape(12.dp)))
+    }
+}
+
+@Composable
+private fun LibraryContent(
+    importedSongs: List<Uri>,
+    onOpenSidebar: () -> Unit,
+    onChooseAudioFiles: () -> Unit,
+    onOpenSavedSongs: () -> Unit,
+    playlists: List<Playlist>,
+    onOpenCreatePlaylist: () -> Unit
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+        item {
+            Box(modifier = Modifier.fillMaxWidth().height(220.dp).background(Color(0xFF302D35))) {
+                IconButton(onClick = onOpenSidebar, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+                    Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = Color.White)
+                }
+                Text("Library", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.BottomStart).padding(22.dp))
+            }
+        }
+        item { LibrarySummaryRow("Saved songs", "${importedSongs.size} songs", Icons.Outlined.LibraryMusic, onOpenSavedSongs) }
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Playlists", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Icon(Icons.Outlined.List, contentDescription = "Playlists", tint = Color.White, modifier = Modifier.height(28.dp))
+            }
+        }
+        item {
+            Row(modifier = Modifier.padding(horizontal = 22.dp).clickable(onClick = onOpenCreatePlaylist), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(86.dp).background(CardBackground, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                    Text("+", color = Color.White, fontSize = 42.sp)
+                }
+                Text("Create playlist", color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(start = 18.dp))
+            }
+        }
+        items(playlists) { playlist ->
+            Text(playlist.name, color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 22.dp))
+        }
+    }
+}
+
+@Composable
+private fun LibrarySummaryRow(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: (() -> Unit)? = null
+) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).clickable(enabled = onClick != null) { onClick?.invoke() }, verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.size(86.dp).background(CardBackground, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = SoftText, modifier = Modifier.height(34.dp))
+        }
+        Column(modifier = Modifier.padding(start = 18.dp)) {
+            Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, color = SoftText, fontSize = 18.sp)
+        }
+    }
+}
+
+@Composable
+private fun CreatePlaylistContent(
+    importedSongs: List<Uri>,
+    downloadedSongs: Set<Uri>,
+    onSavePlaylist: (String, Set<Uri>) -> Unit,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var playlistName by remember { mutableStateOf("") }
+    var selectedSongs by remember(downloadedSongs, importedSongs) {
+        mutableStateOf(if (downloadedSongs.isNotEmpty()) downloadedSongs else importedSongs.toSet())
+    }
+    val songNames = remember(importedSongs) {
+        importedSongs.map { uri -> uri to displayName(context.contentResolver, uri) }
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 40.dp, vertical = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onOpenSidebar) {
-                    Icon(
-                        imageVector = Icons.Outlined.Menu,
-                        contentDescription = "Open sidebar",
-                        tint = Color.White
-                    )
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Text("Create playlist", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        }
+        BasicTextField(
+            value = playlistName,
+            onValueChange = { playlistName = it },
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 20.sp),
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+            decorationBox = { innerTextField ->
+                Box(modifier = Modifier.fillMaxWidth().background(CardBackground, RoundedCornerShape(12.dp)).padding(18.dp)) {
+                    if (playlistName.isEmpty()) Text("Playlist name", color = SoftText, fontSize = 20.sp)
+                    innerTextField()
                 }
-                Text(
-                    text = details.title,
-                    color = Color.White,
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
             }
-            Text(
-                text = details.subtitle,
-                color = SoftText,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        items(details.cards) { cardTitle ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        when {
-                            selectedItem == "Import songs" && cardTitle == "Choose a folder" -> onChooseFolder()
-                            selectedItem == "Import songs" && cardTitle == "Scan for audio files" -> onChooseAudioFiles()
+        )
+        Text("Choose songs", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 26.dp, bottom = 8.dp))
+        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(songNames) { (uri, songName) ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(CardBackground, RoundedCornerShape(8.dp)).clickable {
+                        selectedSongs = if (uri in selectedSongs) selectedSongs - uri else selectedSongs + uri
+                    }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = uri in selectedSongs,
+                        onCheckedChange = { checked ->
+                            selectedSongs = if (checked) selectedSongs + uri else selectedSongs - uri
                         }
-                    },
-                colors = CardDefaults.cardColors(containerColor = CardBackground),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    text = cardTitle,
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(24.dp)
-                )
+                    )
+                    Text(songName, color = Color.White, fontSize = 17.sp, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+                }
             }
         }
-        if (selectedItem == "Import songs" && importedSongs.isNotEmpty()) {
-            item {
-                Text(
-                    text = "${importedSongs.size} item${if (importedSongs.size == 1) "" else "s"} ready to review",
-                    color = AccentGreen,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
+        Box(
+            modifier = Modifier.fillMaxWidth().background(AccentGreen, RoundedCornerShape(28.dp)).clickable(enabled = playlistName.isNotBlank()) {
+                onSavePlaylist(playlistName.trim(), selectedSongs)
+            }.padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("SAVE PLAYLIST", color = Color(0xFF071014), fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
         }
     }
 }
@@ -591,3 +753,101 @@ private fun scanAudioFiles(
     }
     return audioFiles
 }
+
+@Composable
+private fun SavedSongsContent(
+    importedSongs: List<Uri>,
+    onChooseAudioFiles: () -> Unit,
+    onBack: () -> Unit,
+    onPlaySong: (String) -> Unit,
+    onOpenImportSongs: () -> Unit
+) {
+    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    val songNames = remember(importedSongs) {
+        importedSongs.map { uri -> uri to displayName(context.contentResolver, uri) }
+    }
+    val visibleSongs = songNames.filter { (_, name) ->
+        searchQuery.isBlank() || name.contains(searchQuery, ignoreCase = true)
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF0F0E13)).padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
+    ) {
+        item {
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Outlined.List, contentDescription = "Song list", tint = Color.White, modifier = Modifier.height(34.dp))
+            }
+        }
+        item {
+            BasicTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 20.sp),
+                modifier = Modifier.fillMaxWidth().height(58.dp),
+                decorationBox = { innerTextField ->
+                    Row(
+                        modifier = Modifier.fillMaxSize().background(Color(0xFF39373E), RoundedCornerShape(32.dp)).padding(horizontal = 18.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.Search, contentDescription = "Search songs", tint = SoftText, modifier = Modifier.height(26.dp))
+                        Box(modifier = Modifier.padding(start = 18.dp)) {
+                            if (searchQuery.isEmpty()) Text("Search", color = SoftText, fontSize = 20.sp)
+                            innerTextField()
+                        }
+                    }
+                }
+            )
+        }
+        item {
+            Text("Saved songs", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+        }
+        item {
+            Box(modifier = Modifier.width(196.dp).height(80.dp).background(Color(0xFF08C78F), RoundedCornerShape(40.dp)), contentAlignment = Alignment.Center) {
+                Text("SHUFFLE", color = Color(0xFF071014), fontSize = 23.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            }
+        }
+        item {
+            Row(modifier = Modifier.border(2.dp, Color(0xFF47444C), RoundedCornerShape(32.dp)).padding(horizontal = 24.dp, vertical = 12.dp).clickable(onClick = onOpenImportSongs), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CloudDownload, contentDescription = null, tint = Color.White, modifier = Modifier.height(26.dp))
+                Text("IMPORT SONGS", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp))
+            }
+        }
+        items(visibleSongs) { (songUri, songName) ->
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp).clickable { onPlaySong(songName) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(10.dp).background(AccentGreen, androidx.compose.foundation.shape.CircleShape))
+                        Text(songName, color = Color.White, fontSize = 18.sp, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 10.dp))
+                        Text("••", color = SoftText, fontSize = 24.sp)
+                    }
+                    Text("Cosmograph", color = SoftText, fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 3.dp))
+                }
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayer(songTitle: String, isPlaying: Boolean, onTogglePlaying: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(78.dp).padding(horizontal = 6.dp).background(Color(0xFF4A494F), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(modifier = Modifier.size(58.dp).background(Color(0xFF77767A), RoundedCornerShape(8.dp)))
+        Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+            Text(songTitle, color = Color.White, fontSize = 18.sp, maxLines = 1)
+            Text("Cosmograph", color = SoftText, fontSize = 16.sp, maxLines = 1)
+        }
+        Icon(Icons.Outlined.Cast, contentDescription = "Cast", tint = Color.White, modifier = Modifier.size(28.dp))
+        IconButton(onClick = onTogglePlaying) {
+            Icon(if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(36.dp))
+        }
+    }
+}
+
+private data class Playlist(val name: String, val songs: Set<Uri>)
