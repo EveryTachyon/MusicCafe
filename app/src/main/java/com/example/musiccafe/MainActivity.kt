@@ -2,8 +2,8 @@ package com.example.musiccafe
 
 import android.accounts.AccountManager
 import android.app.Activity
-import android.content.Intent
 import android.net.Uri
+import android.media.MediaPlayer
 import android.os.Bundle
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -36,14 +37,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.List
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -96,19 +94,13 @@ private fun MusicCafeApp() {
     var selectedItem by remember { mutableStateOf("Home") }
     var importedSongs by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
-    var playingSong by remember { mutableStateOf<String?>(null) }
+    var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var downloadedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
     var googleDriveEmail by remember { mutableStateOf<String?>(null) }
     var pendingGoogleDriveEmail by remember { mutableStateOf<String?>(null) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     val scope = rememberCoroutineScope()
-    val chooseFolder = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { folderUri ->
-        if (folderUri != null) {
-            importedSongs = scanAudioFiles(context.contentResolver, folderUri)
-        }
-    }
     val chooseAudioFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { audioUris ->
@@ -143,15 +135,27 @@ private fun MusicCafeApp() {
         Box(modifier = Modifier.weight(1f)) {
             LandingContent(
                 selectedItem = selectedItem,
-                onOpenSidebar = {},
                 importedSongs = importedSongs,
                 downloadedSongs = downloadedSongs,
-                onChooseFolder = { chooseFolder.launch(null) },
                 onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) },
                 onOpenSavedSongs = { selectedItem = "Saved songs" },
                 onBackToLibrary = { selectedItem = "Library" },
                 onBackFromImport = { selectedItem = "Library" },
-                onPlaySong = { song -> playingSong = song; isPlaying = true },
+                onPlaySong = { uri, song ->
+                    mediaPlayer?.release()
+                    mediaPlayer = try {
+                        MediaPlayer.create(context, uri)?.also { player ->
+                            player.setOnCompletionListener {
+                                isPlaying = false
+                            }
+                            player.start()
+                        }
+                    } catch (_: Exception) {
+                        null
+                    }
+                    playingSong = uri to song
+                    isPlaying = mediaPlayer != null
+                },
                 onOpenImportSongs = { selectedItem = "Import songs" },
                 onOpenCreatePlaylist = { selectedItem = "Create playlist" },
                 playlists = playlists,
@@ -168,7 +172,17 @@ private fun MusicCafeApp() {
             )
         }
         if (playingSong != null) {
-            MiniPlayer(playingSong!!, isPlaying) { isPlaying = !isPlaying }
+            MiniPlayer(playingSong!!.second, isPlaying, onOpen = { selectedItem = "Saved songs" }) {
+                mediaPlayer?.let { player ->
+                    if (player.isPlaying) {
+                        player.pause()
+                        isPlaying = false
+                    } else {
+                        player.start()
+                        isPlaying = true
+                    }
+                }
+            }
         }
         BottomNavigationBar(selectedItem) { selectedItem = it }
     }
@@ -177,7 +191,7 @@ private fun MusicCafeApp() {
 @Composable
 private fun BottomNavigationBar(selectedItem: String, onItemSelected: (String) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().background(Color(0xFF100E13)).padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().navigationBarsPadding().background(Color(0xFF100E13)).padding(horizontal = 20.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceAround
     ) {
         BottomNavigationItem("Home", Icons.Outlined.Home, selectedItem, onItemSelected)
@@ -204,15 +218,13 @@ private fun BottomNavigationItem(
 @Composable
 private fun LandingContent(
     selectedItem: String,
-    onOpenSidebar: () -> Unit,
     importedSongs: List<Uri>,
     downloadedSongs: Set<Uri>,
-    onChooseFolder: () -> Unit,
     onChooseAudioFiles: () -> Unit,
     onOpenSavedSongs: () -> Unit,
     onBackToLibrary: () -> Unit,
     onBackFromImport: () -> Unit,
-    onPlaySong: (String) -> Unit,
+    onPlaySong: (Uri, String) -> Unit,
     onOpenImportSongs: () -> Unit,
     onOpenCreatePlaylist: () -> Unit,
     playlists: List<Playlist>,
@@ -233,16 +245,15 @@ private fun LandingContent(
     }
 
     when (selectedItem) {
-        "Library" -> LibraryContent(importedSongs, onOpenSidebar, onChooseAudioFiles, onOpenSavedSongs, playlists, onOpenCreatePlaylist)
+        "Library" -> LibraryContent(importedSongs, onChooseAudioFiles, onOpenSavedSongs, playlists, onOpenCreatePlaylist)
         "Saved songs" -> SavedSongsContent(importedSongs, onChooseAudioFiles, onBackToLibrary, onPlaySong, onOpenImportSongs)
         "Create playlist" -> CreatePlaylistContent(importedSongs, downloadedSongs, onSavePlaylist, onBackToLibrary)
-        else -> HomeContent(onOpenSidebar, onOpenSavedSongs, importedSongs, playlists)
+        else -> HomeContent(onOpenSavedSongs, importedSongs, playlists)
     }
 }
 
 @Composable
 private fun HomeContent(
-    onOpenSidebar: () -> Unit,
     onOpenSavedSongs: () -> Unit,
     importedSongs: List<Uri>,
     playlists: List<Playlist>
@@ -251,9 +262,6 @@ private fun HomeContent(
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("MusicCafe", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = onOpenSidebar) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = Color.White)
-                }
             }
         }
         if (importedSongs.isNotEmpty() || playlists.isNotEmpty()) {
@@ -284,27 +292,8 @@ private fun HomeCollectionCard(title: String, onClick: () -> Unit = {}) {
 }
 
 @Composable
-private fun PlaylistCard(title: String, color: Color) {
-    Column(modifier = Modifier.width(160.dp).height(166.dp).background(color, RoundedCornerShape(12.dp)).padding(14.dp)) {
-        Icon(Icons.Outlined.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.height(28.dp))
-        Spacer(Modifier.weight(1f))
-        Text(title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun AdvertisingBlock() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        Text("ADVERTISING", color = Color.White, fontSize = 14.sp, letterSpacing = 1.sp)
-        Spacer(Modifier.height(10.dp))
-        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 42.dp).height(78.dp).background(CardBackground, RoundedCornerShape(12.dp)))
-    }
-}
-
-@Composable
 private fun LibraryContent(
     importedSongs: List<Uri>,
-    onOpenSidebar: () -> Unit,
     onChooseAudioFiles: () -> Unit,
     onOpenSavedSongs: () -> Unit,
     playlists: List<Playlist>,
@@ -314,9 +303,6 @@ private fun LibraryContent(
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Library", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = onOpenSidebar) {
-                    Icon(Icons.Outlined.Settings, contentDescription = "Settings", tint = Color.White)
-                }
             }
         }
         item { LibrarySummaryRow("Saved songs", "${importedSongs.size} songs", Icons.Outlined.LibraryMusic, onOpenSavedSongs) }
@@ -611,12 +597,6 @@ private fun downloadAudioFile(context: android.content.Context, uri: Uri): Boole
     }
 }
 
-private data class PageDetails(
-    val title: String,
-    val subtitle: String,
-    val cards: List<String>
-)
-
 @Preview(showBackground = true, widthDp = 900, heightDp = 800)
 @Composable
 private fun MusicCafePreview() {
@@ -665,7 +645,7 @@ private fun SavedSongsContent(
     importedSongs: List<Uri>,
     onChooseAudioFiles: () -> Unit,
     onBack: () -> Unit,
-    onPlaySong: (String) -> Unit,
+    onPlaySong: (Uri, String) -> Unit,
     onOpenImportSongs: () -> Unit
 ) {
     val context = LocalContext.current
@@ -721,7 +701,7 @@ private fun SavedSongsContent(
             }
         }
         items(visibleSongs) { (songUri, songName) ->
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp).clickable { onPlaySong(songName) }) {
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp).clickable { onPlaySong(songUri, songName) }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(modifier = Modifier.size(10.dp).background(AccentGreen, androidx.compose.foundation.shape.CircleShape))
                         Text(songName, color = Color.White, fontSize = 18.sp, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 10.dp))
@@ -734,9 +714,9 @@ private fun SavedSongsContent(
 }
 
 @Composable
-private fun MiniPlayer(songTitle: String, isPlaying: Boolean, onTogglePlaying: () -> Unit) {
+private fun MiniPlayer(songTitle: String, isPlaying: Boolean, onOpen: () -> Unit, onTogglePlaying: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().height(78.dp).padding(horizontal = 6.dp).background(Color(0xFF4A494F), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp),
+        modifier = Modifier.fillMaxWidth().height(78.dp).padding(horizontal = 6.dp).background(Color(0xFF4A494F), RoundedCornerShape(14.dp)).clickable(onClick = onOpen).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(modifier = Modifier.size(58.dp).background(Color(0xFF77767A), RoundedCornerShape(8.dp)))
