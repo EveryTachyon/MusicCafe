@@ -780,22 +780,22 @@ private fun MiniPlayer(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(horizontal = 6.dp, vertical = 5.dp)
             .background(Color(0xFF4D4A50), RoundedCornerShape(18.dp))
             .clickable(onClick = onOpen)
-            .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 6.dp, end = 9.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (albumArt != null) {
             Image(
                 bitmap = albumArt.asImageBitmap(),
                 contentDescription = "Album artwork",
-                modifier = Modifier.size(64.dp).background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+                modifier = Modifier.size(48.dp).background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(48.dp)
                     .background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
             )
         }
@@ -803,13 +803,13 @@ private fun MiniPlayer(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 12.dp),
+                .padding(start = 9.dp),
             verticalArrangement = Arrangement.Center
         ) {
             Text(
                 text = displayTitle,
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 modifier = Modifier.padding(bottom = 2.dp)
@@ -817,26 +817,26 @@ private fun MiniPlayer(
             Text(
                 text = displayArtist,
                 color = SoftText,
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 maxLines = 1
             )
         }
 
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(12.dp)),
+                .size(32.dp)
+                .border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
             IconButton(
                 onClick = onTogglePlaying,
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = Color.White,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
