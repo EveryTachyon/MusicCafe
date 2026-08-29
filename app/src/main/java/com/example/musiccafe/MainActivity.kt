@@ -1,7 +1,10 @@
 package com.example.musiccafe
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.provider.DocumentsContract
@@ -11,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.net.toFile
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -154,7 +159,7 @@ private fun MusicCafeApp() {
             )
         }
         if (playingSong != null) {
-            MiniPlayer(playingSong!!.second, isPlaying, onOpen = { selectedItem = "Saved songs" }) {
+            MiniPlayer(playingSong!!.first, playingSong!!.second, isPlaying, onOpen = { selectedItem = "Saved songs" }) {
                 mediaPlayer?.let { player ->
                     if (player.isPlaying) {
                         player.pause()
@@ -723,20 +728,103 @@ private fun SavedSongsContent(
 }
 
 @Composable
-private fun MiniPlayer(songTitle: String, isPlaying: Boolean, onOpen: () -> Unit, onTogglePlaying: () -> Unit) {
+private fun MiniPlayer(
+    songUri: Uri,
+    songTitle: String,
+    isPlaying: Boolean,
+    onOpen: () -> Unit,
+    onTogglePlaying: () -> Unit
+) {
+    val context = LocalContext.current
+    val albumArt = remember(songUri) { loadAlbumArt(context, songUri) }
+
     Row(
-        modifier = Modifier.fillMaxWidth().height(78.dp).padding(horizontal = 6.dp).background(Color(0xFF4A494F), RoundedCornerShape(14.dp)).clickable(onClick = onOpen).padding(horizontal = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .background(Color(0xFF4D4A50), RoundedCornerShape(18.dp))
+            .clickable(onClick = onOpen)
+            .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(58.dp).background(Color(0xFF77767A), RoundedCornerShape(8.dp)))
-        Column(modifier = Modifier.weight(1f).padding(start = 14.dp)) {
-            Text(songTitle, color = Color.White, fontSize = 18.sp, maxLines = 1)
-            Text("Cosmograph", color = SoftText, fontSize = 16.sp, maxLines = 1)
+        if (albumArt != null) {
+            Image(
+                bitmap = albumArt.asImageBitmap(),
+                contentDescription = "Album artwork",
+                modifier = Modifier.size(64.dp).background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+            )
         }
-        Icon(Icons.Outlined.Cast, contentDescription = "Cast", tint = Color.White, modifier = Modifier.size(28.dp))
-        IconButton(onClick = onTogglePlaying) {
-            Icon(if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(36.dp))
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = songTitle.uppercase(),
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.padding(bottom = 2.dp)
+            )
+            Text(
+                text = "Cosmograph",
+                color = SoftText,
+                fontSize = 15.sp,
+                maxLines = 1
+            )
         }
+
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            IconButton(
+                onClick = onTogglePlaying,
+                modifier = Modifier.size(42.dp)
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+    }
+}
+
+private fun loadAlbumArt(context: android.content.Context, uri: Uri): Bitmap? {
+    return try {
+        val retriever = MediaMetadataRetriever()
+        try {
+            if (uri.scheme == "content" || uri.scheme == "android.resource") {
+                retriever.setDataSource(context, uri)
+            } else if (uri.scheme == "file") {
+                retriever.setDataSource(uri.path)
+            } else {
+                val savedUri = copyUriToAppStorage(context, uri)
+                if (savedUri == null) return null
+                retriever.setDataSource(context, savedUri)
+            }
+
+            val embedded = retriever.embeddedPicture ?: return null
+            BitmapFactory.decodeByteArray(embedded, 0, embedded.size)
+        } finally {
+            retriever.release()
+        }
+    } catch (_: Exception) {
+        null
     }
 }
 
