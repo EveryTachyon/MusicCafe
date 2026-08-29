@@ -80,6 +80,8 @@ private val AccentGreen = Color(0xFF00D51B)
 private val CardBackground = Color(0xFF242128)
 private val SoftText = Color(0xFFB9B6BC)
 
+private data class Playlist(val name: String, val songs: Set<Uri>)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -664,16 +666,19 @@ private fun SavedSongsContent(
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    val songNames = remember(importedSongs) {
-        importedSongs.map { uri -> uri to displayName(context.contentResolver, uri) }
+    val trackData = remember(importedSongs) {
+        importedSongs.map { uri ->
+            val metadata = loadTrackMetadata(context, uri)
+            metadata
+        }
     }
-    val visibleSongs = songNames.filter { (_, name) ->
-        searchQuery.isBlank() || name.contains(searchQuery, ignoreCase = true)
+    val visibleSongs = trackData.filter { track ->
+        searchQuery.isBlank() || track.title.contains(searchQuery, ignoreCase = true) || track.artist.contains(searchQuery, ignoreCase = true)
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(Color(0xFF0F0E13)).padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -714,18 +719,49 @@ private fun SavedSongsContent(
                 Text("IMPORT SONGS", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp))
             }
         }
-        items(visibleSongs) { (songUri, songName) ->
-                Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp).clickable { onPlaySong(songUri, songName) }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(10.dp).background(AccentGreen, androidx.compose.foundation.shape.CircleShape))
-                        Text(songName, color = Color.White, fontSize = 18.sp, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 10.dp))
-                        Text("••", color = SoftText, fontSize = 24.sp)
+        items(visibleSongs) { track ->
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onPlaySong(track.uri, track.title) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(74.dp).background(Color(0xFF3C3A40), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (track.artwork != null) {
+                        Image(
+                            bitmap = track.artwork.asImageBitmap(),
+                            contentDescription = "Album art",
+                            modifier = Modifier.fillMaxSize().background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize().background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+                        )
                     }
-                    Text("Cosmograph", color = SoftText, fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 3.dp))
                 }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 14.dp)
+                ) {
+                    Text(track.title, color = Color.White, fontSize = 18.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
+                    Text(track.artist, color = SoftText, fontSize = 15.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                }
+
+                Text("••", color = SoftText, fontSize = 22.sp, modifier = Modifier.padding(start = 12.dp))
+            }
         }
     }
 }
+
+private data class TrackMetadata(
+    val uri: Uri,
+    val title: String,
+    val artist: String,
+    val artwork: Bitmap?
+)
 
 @Composable
 private fun MiniPlayer(
@@ -736,7 +772,10 @@ private fun MiniPlayer(
     onTogglePlaying: () -> Unit
 ) {
     val context = LocalContext.current
-    val albumArt = remember(songUri) { loadAlbumArt(context, songUri) }
+    val track = remember(songUri) { loadTrackMetadata(context, songUri) }
+    val displayTitle = if (songTitle.isNotBlank()) songTitle else track.title
+    val displayArtist = track.artist
+    val albumArt = track.artwork
 
     Row(
         modifier = Modifier
@@ -768,15 +807,15 @@ private fun MiniPlayer(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = songTitle.uppercase(),
+                text = displayTitle,
                 color = Color.White,
-                fontSize = 24.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 modifier = Modifier.padding(bottom = 2.dp)
             )
             Text(
-                text = "Cosmograph",
+                text = displayArtist,
                 color = SoftText,
                 fontSize = 15.sp,
                 maxLines = 1
@@ -804,6 +843,45 @@ private fun MiniPlayer(
     }
 }
 
+private fun loadTrackMetadata(context: android.content.Context, uri: Uri): TrackMetadata {
+    return try {
+        val retriever = MediaMetadataRetriever()
+        try {
+            if (uri.scheme == "content" || uri.scheme == "android.resource") {
+                retriever.setDataSource(context, uri)
+            } else if (uri.scheme == "file") {
+                retriever.setDataSource(uri.path)
+            } else {
+                val savedUri = copyUriToAppStorage(context, uri)
+                if (savedUri == null) return TrackMetadata(
+                    uri = uri,
+                    title = displayName(context.contentResolver, uri),
+                    artist = "Cosmograph",
+                    artwork = null
+                )
+                retriever.setDataSource(context, savedUri)
+            }
+
+            val embedded = retriever.embeddedPicture
+            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                ?: displayName(context.contentResolver, uri)
+            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?: "Cosmograph"
+            val artwork = embedded?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            TrackMetadata(uri, title, artist, artwork)
+        } finally {
+            retriever.release()
+        }
+    } catch (_: Exception) {
+        TrackMetadata(
+            uri = uri,
+            title = displayName(context.contentResolver, uri),
+            artist = "Cosmograph",
+            artwork = loadAlbumArt(context, uri)
+        )
+    }
+}
+
 private fun loadAlbumArt(context: android.content.Context, uri: Uri): Bitmap? {
     return try {
         val retriever = MediaMetadataRetriever()
@@ -827,5 +905,3 @@ private fun loadAlbumArt(context: android.content.Context, uri: Uri): Bitmap? {
         null
     }
 }
-
-private data class Playlist(val name: String, val songs: Set<Uri>)
