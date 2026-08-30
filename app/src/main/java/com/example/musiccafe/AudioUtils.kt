@@ -32,11 +32,50 @@ fun displayName(contentResolver: ContentResolver, uri: Uri): String {
     return uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file"
 }
 
+private const val APP_STORAGE_PREFS = "musiccafe_preferences"
+private const val IMPORTED_SONGS_KEY = "imported_songs"
+private const val DOWNLOADED_SONGS_KEY = "downloaded_songs"
+
 fun persistReadPermission(context: Context, uri: Uri) {
     try {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     } catch (_: SecurityException) {
     }
+}
+
+fun saveImportedSongs(context: Context, songs: List<Uri>) {
+    val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+    prefs.edit().putStringSet(IMPORTED_SONGS_KEY, songs.map { it.toString() }.toSet()).apply()
+}
+
+fun loadImportedSongs(context: Context): List<Uri> {
+    val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+    return (prefs.getStringSet(IMPORTED_SONGS_KEY, emptySet()) ?: emptySet())
+        .mapNotNull { uriString ->
+            runCatching { Uri.parse(uriString) }.getOrNull()?.also { uri ->
+                if (uri.scheme == "content") {
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: SecurityException) {
+                    }
+                }
+            }
+        }
+}
+
+fun saveDownloadedSongs(context: Context, songs: Set<Uri>) {
+    val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+    prefs.edit().putStringSet(DOWNLOADED_SONGS_KEY, songs.map { it.toString() }.toSet()).apply()
+}
+
+fun loadDownloadedSongs(context: Context): Set<Uri> {
+    val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+    return (prefs.getStringSet(DOWNLOADED_SONGS_KEY, emptySet()) ?: emptySet())
+        .mapNotNull { uriString -> runCatching { Uri.parse(uriString) }.getOrNull() }
+        .toSet()
 }
 
 fun isSupportedAudioMimeType(mimeType: String?): Boolean {

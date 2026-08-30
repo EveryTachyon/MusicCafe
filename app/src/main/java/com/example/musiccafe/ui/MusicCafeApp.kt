@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,17 +40,30 @@ import com.example.musiccafe.MainActivity
 import com.example.musiccafe.Playlist
 import com.example.musiccafe.copyUriToAppStorage
 import com.example.musiccafe.isSupportedAudioUri
+import com.example.musiccafe.loadDownloadedSongs
+import com.example.musiccafe.loadImportedSongs
 import com.example.musiccafe.persistReadPermission
+import com.example.musiccafe.saveDownloadedSongs
+import com.example.musiccafe.saveImportedSongs
 
 @Composable
 fun MusicCafeApp(activity: MainActivity) {
     val context = LocalContext.current
     var selectedItem by remember { mutableStateOf("Home") }
-    var importedSongs by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var isImportScreenOpen by remember { mutableStateOf(false) }
+    var importedSongs by remember { mutableStateOf(loadImportedSongs(context)) }
     var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
-    var downloadedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
+    var downloadedSongs by remember { mutableStateOf(loadDownloadedSongs(context)) }
+
+    LaunchedEffect(importedSongs) {
+        saveImportedSongs(context, importedSongs)
+    }
+
+    LaunchedEffect(downloadedSongs) {
+        saveDownloadedSongs(context, downloadedSongs)
+    }
 
     val chooseAudioFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -57,6 +71,7 @@ fun MusicCafeApp(activity: MainActivity) {
         val validAudioUris = audioUris.filter { uri -> isSupportedAudioUri(context.contentResolver, uri) }
         validAudioUris.forEach { uri -> persistReadPermission(context, uri) }
         importedSongs = (importedSongs + validAudioUris).distinct()
+        isImportScreenOpen = true
     }
 
     val chooseGoogleDriveFiles = rememberLauncherForActivityResult(
@@ -70,18 +85,32 @@ fun MusicCafeApp(activity: MainActivity) {
             importedSongs = (importedSongs + savedUri).distinct()
             downloadedSongs = downloadedSongs + savedUri
         }
+        isImportScreenOpen = true
     }
 
     Column(modifier = Modifier.fillMaxSize().background(ContentBackground)) {
         Box(modifier = Modifier.weight(1f)) {
             LandingContent(
                 selectedItem = selectedItem,
+                isImportScreenOpen = isImportScreenOpen,
                 importedSongs = importedSongs,
                 downloadedSongs = downloadedSongs,
-                onChooseAudioFiles = { chooseAudioFiles.launch(arrayOf("audio/*")) },
-                onOpenSavedSongs = { selectedItem = "Saved songs" },
-                onBackToLibrary = { selectedItem = "Library" },
-                onBackFromImport = { selectedItem = "Library" },
+                onChooseAudioFiles = {
+                    isImportScreenOpen = true
+                    chooseAudioFiles.launch(arrayOf("audio/*"))
+                },
+                onOpenSavedSongs = {
+                    selectedItem = "Saved songs"
+                    isImportScreenOpen = false
+                },
+                onBackToLibrary = {
+                    selectedItem = "Library"
+                    isImportScreenOpen = false
+                },
+                onBackFromImport = {
+                    selectedItem = "Library"
+                    isImportScreenOpen = false
+                },
                 onPlaySong = { uri, song ->
                     val service = activity.getPlaybackService()
                     if (service != null) {
@@ -95,14 +124,22 @@ fun MusicCafeApp(activity: MainActivity) {
                         }
                     }
                 },
-                onOpenImportSongs = { selectedItem = "Import songs" },
-                onOpenCreatePlaylist = { selectedItem = "Create playlist" },
+                onOpenImportSongs = {
+                    selectedItem = "Import songs"
+                    isImportScreenOpen = true
+                },
+                onOpenCreatePlaylist = {
+                    selectedItem = "Create playlist"
+                    isImportScreenOpen = false
+                },
                 playlists = playlists,
                 onSavePlaylist = { name, songs ->
                     playlists = playlists + Playlist(name, songs)
                     selectedItem = "Library"
+                    isImportScreenOpen = false
                 },
                 onChooseGoogleDriveFiles = {
+                    isImportScreenOpen = true
                     chooseGoogleDriveFiles.launch(arrayOf("audio/*", "application/octet-stream"))
                 }
             )
@@ -164,6 +201,7 @@ private fun BottomNavigationItem(
 @Composable
 private fun LandingContent(
     selectedItem: String,
+    isImportScreenOpen: Boolean,
     importedSongs: List<Uri>,
     downloadedSongs: Set<Uri>,
     onChooseAudioFiles: () -> Unit,
@@ -177,7 +215,7 @@ private fun LandingContent(
     onSavePlaylist: (String, Set<Uri>) -> Unit,
     onChooseGoogleDriveFiles: () -> Unit
 ) {
-    if (selectedItem == "Import songs") {
+    if (isImportScreenOpen) {
         ImportSongsContent(
             onBack = onBackFromImport,
             importedSongs = importedSongs,
