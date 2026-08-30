@@ -1,13 +1,19 @@
 package com.example.musiccafe
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.provider.DocumentsContract
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -82,20 +88,89 @@ private val SoftText = Color(0xFFB9B6BC)
 
 private data class Playlist(val name: String, val songs: Set<Uri>)
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), MediaPlaybackService.PlaybackListener {
+    private var playbackService: MediaPlaybackService? = null
+    private var isBound = false
+    
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, service: IBinder) {
+            val binder = service as MediaPlaybackService.MediaPlaybackBinder
+            playbackService = binder.getService()
+            playbackService?.setPlaybackListener(this@MainActivity)
+            isBound = true
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            isBound = false
+        }
+    }
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestNotificationPermissionIfNeeded()
+        bindToService()
         setContent {
             MusicCafeTheme {
-                MusicCafeApp()
+                MusicCafeApp(this@MainActivity)
             }
         }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+    }
+    
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                requestPermissions(
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    NOTIFICATION_PERMISSION_REQUEST_CODE
+                )
+            }
+        }
+    }
+    
+    private fun bindToService() {
+        val intent = Intent(this, MediaPlaybackService::class.java)
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+    
+    fun getPlaybackService(): MediaPlaybackService? = playbackService
+    
+    // PlaybackListener implementation
+    override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        // Notify UI of playback state change if needed
+    }
+    
+    override fun onSkipNext() {
+        // Handle skip next action
+    }
+    
+    override fun onSkipPrev() {
+        // Handle skip previous action
+    }
+    
+    override fun onSongCompleted() {
+        // Handle song completion
+    }
+    
+    companion object {
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 100
     }
 }
 
 @Composable
-private fun MusicCafeApp() {
+private fun MusicCafeApp(activity: MainActivity) {
     val context = LocalContext.current
     var selectedItem by remember { mutableStateOf("Home") }
     var importedSongs by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -103,7 +178,6 @@ private fun MusicCafeApp() {
     var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var downloadedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     val chooseAudioFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { audioUris ->
@@ -134,19 +208,18 @@ private fun MusicCafeApp() {
                 onBackToLibrary = { selectedItem = "Library" },
                 onBackFromImport = { selectedItem = "Library" },
                 onPlaySong = { uri, song ->
-                    mediaPlayer?.release()
-                    mediaPlayer = try {
-                        MediaPlayer.create(context, uri)?.also { player ->
-                            player.setOnCompletionListener {
-                                isPlaying = false
-                            }
-                            player.start()
+                    val service = activity.getPlaybackService()
+                    if (service != null) {
+                        service.playSong(uri, song)
+                        playingSong = uri to song
+                        isPlaying = true
+                        // Start the service as foreground if not already
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(Intent(context, MediaPlaybackService::class.java))
+                        } else {
+                            context.startService(Intent(context, MediaPlaybackService::class.java))
                         }
-                    } catch (_: Exception) {
-                        null
                     }
-                    playingSong = uri to song
-                    isPlaying = mediaPlayer != null
                 },
                 onOpenImportSongs = { selectedItem = "Import songs" },
                 onOpenCreatePlaylist = { selectedItem = "Create playlist" },
@@ -162,12 +235,13 @@ private fun MusicCafeApp() {
         }
         if (playingSong != null) {
             MiniPlayer(playingSong!!.first, playingSong!!.second, isPlaying, onOpen = { selectedItem = "Saved songs" }) {
-                mediaPlayer?.let { player ->
-                    if (player.isPlaying) {
-                        player.pause()
+                val service = activity.getPlaybackService()
+                if (service != null) {
+                    if (service.isCurrentlyPlaying()) {
+                        service.pausePlayback()
                         isPlaying = false
                     } else {
-                        player.start()
+                        service.resumePlayback()
                         isPlaying = true
                     }
                 }
@@ -617,7 +691,8 @@ private fun downloadAudioFile(context: android.content.Context, uri: Uri): Boole
 @Composable
 private fun MusicCafePreview() {
     MusicCafeTheme(dynamicColor = false, darkTheme = true) {
-        MusicCafeApp()
+        // Preview doesn't have access to MainActivity, so we use empty/placeholder
+        // In production, MusicCafeApp is called from MainActivity with this@MainActivity
     }
 }
 
