@@ -62,7 +62,7 @@ fun SavedSongsContent(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF0F0E13)).padding(horizontal = 24.dp),
+        modifier = Modifier.fillMaxSize().background(ContentBackground).padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -84,7 +84,7 @@ fun SavedSongsContent(
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 decorationBox = { innerTextField ->
                     Row(
-                        modifier = Modifier.fillMaxSize().background(Color(0xFF39373E), RoundedCornerShape(32.dp)).padding(horizontal = 18.dp),
+                        modifier = Modifier.fillMaxSize().background(Color(0xFF121212), RoundedCornerShape(32.dp)).padding(horizontal = 18.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(Icons.Outlined.Search, contentDescription = "Search songs", tint = SoftText, modifier = Modifier.height(26.dp))
@@ -102,7 +102,7 @@ fun SavedSongsContent(
         item {
             Row(
                 modifier = Modifier
-                    .border(2.dp, Color(0xFF47444C), RoundedCornerShape(32.dp))
+                    .border(2.dp, Color(0xFF2B2B2E), RoundedCornerShape(32.dp))
                     .padding(horizontal = 24.dp, vertical = 12.dp)
                     .clickable(onClick = onOpenImportSongs),
                 verticalAlignment = Alignment.CenterVertically
@@ -117,17 +117,17 @@ fun SavedSongsContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    modifier = Modifier.size(74.dp).background(Color(0xFF3C3A40), RoundedCornerShape(12.dp)),
+                    modifier = Modifier.size(74.dp).background(Color(0xFF1A1A1C), RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     if (track.artwork != null) {
                         Image(
                             bitmap = track.artwork.asImageBitmap(),
                             contentDescription = "Album art",
-                            modifier = Modifier.fillMaxSize().background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+                            modifier = Modifier.fillMaxSize().background(Color(0xFF3C3C3E), RoundedCornerShape(12.dp))
                         )
                     } else {
-                        Box(modifier = Modifier.fillMaxSize().background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp)))
+                        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF3C3C3E), RoundedCornerShape(12.dp)))
                     }
                 }
 
@@ -162,7 +162,7 @@ fun MiniPlayer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 6.dp, vertical = 5.dp)
-            .background(Color(0xFF4D4A50), RoundedCornerShape(18.dp))
+            .background(Color(0xFF121212), RoundedCornerShape(18.dp))
             .clickable(onClick = onOpen)
             .padding(start = 6.dp, end = 9.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -171,13 +171,13 @@ fun MiniPlayer(
             Image(
                 bitmap = albumArt.asImageBitmap(),
                 contentDescription = "Album artwork",
-                modifier = Modifier.size(48.dp).background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+                modifier = Modifier.size(48.dp).background(Color(0xFF3C3C3E), RoundedCornerShape(12.dp))
             )
         } else {
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .background(Color(0xFFB9B4B8), RoundedCornerShape(12.dp))
+                    .background(Color(0xFF3C3C3E), RoundedCornerShape(12.dp))
             )
         }
 
