@@ -1,30 +1,30 @@
 package com.example.musiccafe
 
 import android.content.ComponentName
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.media.MediaMetadataRetriever
-import android.media.MediaPlayer
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import android.provider.DocumentsContract
-import androidx.core.content.ContextCompat
-import androidx.activity.compose.rememberLauncherForActivityResult
+import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.core.net.toFile
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,52 +32,47 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryMusic
-import androidx.compose.material.icons.outlined.List
-import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.CloudDownload
-import androidx.compose.material.icons.outlined.Cast
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.musiccafe.ui.theme.MusicCafeTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.File
 
 private val SidebarBackground = Color(0xFF100E13)
 private val ContentBackground = Color(0xFF18161C)
@@ -85,6 +80,9 @@ private val SidebarText = Color(0xFF8B898C)
 private val AccentGreen = Color(0xFF00D51B)
 private val CardBackground = Color(0xFF242128)
 private val SoftText = Color(0xFFB9B6BC)
+
+@Suppress("SpellCheckingInspection")
+private const val DEFAULT_ARTIST = "Cosmograph"
 
 private data class Playlist(val name: String, val songs: Set<Uri>)
 
@@ -130,7 +128,7 @@ class MainActivity : ComponentActivity(), MediaPlaybackService.PlaybackListener 
             if (ContextCompat.checkSelfPermission(
                     this,
                     android.Manifest.permission.POST_NOTIFICATIONS
-                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) != PackageManager.PERMISSION_GRANTED
             ) {
                 requestPermissions(
                     arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
@@ -254,7 +252,7 @@ private fun MusicCafeApp(activity: MainActivity) {
 @Composable
 private fun BottomNavigationBar(selectedItem: String, onItemSelected: (String) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding().background(Color(0xFF100E13)).padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().navigationBarsPadding().background(SidebarBackground).padding(horizontal = 20.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceAround
     ) {
         BottomNavigationItem("Home", Icons.Outlined.Home, selectedItem, onItemSelected)
@@ -265,7 +263,7 @@ private fun BottomNavigationBar(selectedItem: String, onItemSelected: (String) -
 @Composable
 private fun BottomNavigationItem(
     label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     selectedItem: String,
     onItemSelected: (String) -> Unit
 ) {
@@ -306,8 +304,8 @@ private fun LandingContent(
     }
 
     when (selectedItem) {
-        "Library" -> LibraryContent(importedSongs, onChooseAudioFiles, onOpenSavedSongs, playlists, onOpenCreatePlaylist)
-        "Saved songs" -> SavedSongsContent(importedSongs, onChooseAudioFiles, onBackToLibrary, onPlaySong, onOpenImportSongs)
+        "Library" -> LibraryContent(importedSongs, onOpenSavedSongs, playlists, onOpenCreatePlaylist)
+        "Saved songs" -> SavedSongsContent(importedSongs, onBackToLibrary, onPlaySong, onOpenImportSongs)
         "Create playlist" -> CreatePlaylistContent(importedSongs, downloadedSongs, onSavePlaylist, onBackToLibrary)
         else -> HomeContent(onOpenSavedSongs, importedSongs, playlists)
     }
@@ -355,7 +353,6 @@ private fun HomeCollectionCard(title: String, onClick: () -> Unit = {}) {
 @Composable
 private fun LibraryContent(
     importedSongs: List<Uri>,
-    onChooseAudioFiles: () -> Unit,
     onOpenSavedSongs: () -> Unit,
     playlists: List<Playlist>,
     onOpenCreatePlaylist: () -> Unit
@@ -366,11 +363,11 @@ private fun LibraryContent(
                 Text("Library", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             }
         }
-        item { LibrarySummaryRow("Saved songs", "${importedSongs.size} songs", Icons.Outlined.LibraryMusic, onOpenSavedSongs) }
+        item { LibrarySummaryRow("${importedSongs.size} songs", Icons.Outlined.LibraryMusic, onOpenSavedSongs) }
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Playlists", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Icon(Icons.Outlined.List, contentDescription = "Playlists", tint = Color.White, modifier = Modifier.height(28.dp))
+                Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "Playlists", tint = Color.White, modifier = Modifier.height(28.dp))
             }
         }
         item {
@@ -389,9 +386,8 @@ private fun LibraryContent(
 
 @Composable
 private fun LibrarySummaryRow(
-    title: String,
     subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: (() -> Unit)? = null
 ) {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).clickable(enabled = onClick != null) { onClick?.invoke() }, verticalAlignment = Alignment.CenterVertically) {
@@ -399,7 +395,7 @@ private fun LibrarySummaryRow(
             Icon(icon, contentDescription = null, tint = SoftText, modifier = Modifier.height(34.dp))
         }
         Column(modifier = Modifier.padding(start = 18.dp)) {
-            Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Saved songs", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(subtitle, color = SoftText, fontSize = 18.sp)
         }
     }
@@ -424,7 +420,7 @@ private fun CreatePlaylistContent(
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 18.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
             Text("Create playlist", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         }
@@ -432,11 +428,11 @@ private fun CreatePlaylistContent(
             value = playlistName,
             onValueChange = { playlistName = it },
             singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 20.sp),
+            textStyle = TextStyle(color = Color.White, fontSize = 20.sp),
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
             decorationBox = { innerTextField ->
                 Box(modifier = Modifier.fillMaxWidth().background(CardBackground, RoundedCornerShape(12.dp)).padding(18.dp)) {
-                    if (playlistName.isEmpty()) Text("Playlist name", color = SoftText, fontSize = 20.sp)
+                    if (playlistName.isBlank()) Text("Playlist name", color = SoftText, fontSize = 20.sp)
                     innerTextField()
                 }
             }
@@ -499,7 +495,7 @@ private fun ImportSongsContent(
             ) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        imageVector = Icons.Outlined.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = "Back to Library",
                         tint = Color.White
                     )
@@ -510,7 +506,7 @@ private fun ImportSongsContent(
                     fontSize = 34.sp,
                     fontWeight = FontWeight.Normal,
                     modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.width(48.dp))
             }
@@ -577,61 +573,8 @@ private fun ImportSourceRow(name: String, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun GoogleDriveAccountCard(email: String, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 36.dp, vertical = 18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Google Drive",
-                        color = Color.White,
-                        fontSize = 27.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "285 MB / 15 GB used",
-                        color = SoftText,
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-                CircularProgressIndicator(
-                    progress = { 0.019f },
-                    color = AccentGreen,
-                    trackColor = SidebarBackground,
-                    strokeWidth = 8.dp,
-                    modifier = Modifier.width(56.dp).height(56.dp)
-                )
-            }
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 18.dp)
-                    .height(1.dp)
-                    .background(Color(0xFF3A3740))
-            )
-            Text(
-                text = email,
-                color = Color.White,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(top = 18.dp)
-            )
-        }
-    }
-}
-
-private fun displayName(contentResolver: android.content.ContentResolver, uri: Uri): String {
-    val nameColumn = android.provider.OpenableColumns.DISPLAY_NAME
+private fun displayName(contentResolver: ContentResolver, uri: Uri): String {
+    val nameColumn = OpenableColumns.DISPLAY_NAME
     contentResolver.query(uri, arrayOf(nameColumn), null, null, null)?.use { cursor ->
         if (cursor.moveToFirst()) {
             return cursor.getString(cursor.getColumnIndexOrThrow(nameColumn))
@@ -640,7 +583,7 @@ private fun displayName(contentResolver: android.content.ContentResolver, uri: U
     return uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file"
 }
 
-private fun persistReadPermission(context: android.content.Context, uri: Uri) {
+private fun persistReadPermission(context: Context, uri: Uri) {
     try {
         context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     } catch (_: SecurityException) {
@@ -664,16 +607,16 @@ fun sanitizeFileName(fileName: String): String {
     return if (safe.isBlank()) "audio_file" else safe
 }
 
-private fun isSupportedAudioUri(contentResolver: android.content.ContentResolver, uri: Uri): Boolean {
+private fun isSupportedAudioUri(contentResolver: ContentResolver, uri: Uri): Boolean {
     val mimeType = contentResolver.getType(uri)
     return isSupportedAudioMimeType(mimeType)
 }
 
-private fun copyUriToAppStorage(context: android.content.Context, uri: Uri): Uri? {
+private fun copyUriToAppStorage(context: Context, uri: Uri): Uri? {
     return try {
         val originalName = displayName(context.contentResolver, uri)
         val safeFileName = sanitizeFileName(originalName)
-        val destination = java.io.File(context.filesDir, safeFileName)
+        val destination = File(context.filesDir, safeFileName)
         context.contentResolver.openInputStream(uri)?.use { input ->
             destination.outputStream().use { output -> input.copyTo(output) }
         }
@@ -681,10 +624,6 @@ private fun copyUriToAppStorage(context: android.content.Context, uri: Uri): Uri
     } catch (_: Exception) {
         null
     }
-}
-
-private fun downloadAudioFile(context: android.content.Context, uri: Uri): Boolean {
-    return copyUriToAppStorage(context, uri) != null
 }
 
 @Preview(showBackground = true, widthDp = 900, heightDp = 800)
@@ -696,45 +635,9 @@ private fun MusicCafePreview() {
     }
 }
 
-private fun scanAudioFiles(contentResolver: android.content.ContentResolver, treeUri: Uri): List<Uri> {
-    val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
-    val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, rootDocumentId)
-    return scanAudioFiles(contentResolver, childUri, treeUri)
-}
-
-private fun scanAudioFiles(
-    contentResolver: android.content.ContentResolver,
-    directoryUri: Uri,
-    treeUri: Uri
-): List<Uri> {
-    val audioFiles = mutableListOf<Uri>()
-    val projection = arrayOf(
-        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-        DocumentsContract.Document.COLUMN_MIME_TYPE
-    )
-
-    contentResolver.query(directoryUri, projection, null, null, null)?.use { cursor ->
-        val idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-        val mimeColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-        while (cursor.moveToNext()) {
-            val documentId = cursor.getString(idColumn)
-            val mimeType = cursor.getString(mimeColumn)
-            val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-            if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
-                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
-                audioFiles += scanAudioFiles(contentResolver, childrenUri, treeUri)
-            } else if (mimeType.startsWith("audio/")) {
-                audioFiles += documentUri
-            }
-        }
-    }
-    return audioFiles
-}
-
 @Composable
 private fun SavedSongsContent(
     importedSongs: List<Uri>,
-    onChooseAudioFiles: () -> Unit,
     onBack: () -> Unit,
     onPlaySong: (Uri, String) -> Unit,
     onOpenImportSongs: () -> Unit
@@ -758,10 +661,10 @@ private fun SavedSongsContent(
         item {
             Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
                 }
                 Spacer(Modifier.weight(1f))
-                Icon(Icons.Outlined.List, contentDescription = "Song list", tint = Color.White, modifier = Modifier.height(34.dp))
+                Icon(Icons.AutoMirrored.Outlined.List, contentDescription = "Song list", tint = Color.White, modifier = Modifier.height(34.dp))
             }
         }
         item {
@@ -769,7 +672,7 @@ private fun SavedSongsContent(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 20.sp),
+                textStyle = TextStyle(color = Color.White, fontSize = 20.sp),
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 decorationBox = { innerTextField ->
                     Row(
@@ -778,7 +681,7 @@ private fun SavedSongsContent(
                     ) {
                         Icon(Icons.Outlined.Search, contentDescription = "Search songs", tint = SoftText, modifier = Modifier.height(26.dp))
                         Box(modifier = Modifier.padding(start = 18.dp)) {
-                            if (searchQuery.isEmpty()) Text("Search", color = SoftText, fontSize = 20.sp)
+                            if (searchQuery.isBlank()) Text("Search", color = SoftText, fontSize = 20.sp)
                             innerTextField()
                         }
                     }
@@ -918,30 +821,30 @@ private fun MiniPlayer(
     }
 }
 
-private fun loadTrackMetadata(context: android.content.Context, uri: Uri): TrackMetadata {
+private fun loadTrackMetadata(context: Context, uri: Uri): TrackMetadata {
     return try {
         val retriever = MediaMetadataRetriever()
         try {
-            if (uri.scheme == "content" || uri.scheme == "android.resource") {
-                retriever.setDataSource(context, uri)
-            } else if (uri.scheme == "file") {
-                retriever.setDataSource(uri.path)
-            } else {
-                val savedUri = copyUriToAppStorage(context, uri)
-                if (savedUri == null) return TrackMetadata(
-                    uri = uri,
-                    title = displayName(context.contentResolver, uri),
-                    artist = "Cosmograph",
-                    artwork = null
-                )
-                retriever.setDataSource(context, savedUri)
+            when (uri.scheme) {
+                "content", "android.resource" -> retriever.setDataSource(context, uri)
+                "file" -> retriever.setDataSource(uri.path)
+                else -> {
+                    val savedUri = copyUriToAppStorage(context, uri)
+                    if (savedUri == null) return TrackMetadata(
+                        uri = uri,
+                        title = displayName(context.contentResolver, uri),
+                        artist = DEFAULT_ARTIST,
+                        artwork = null
+                    )
+                    retriever.setDataSource(context, savedUri)
+                }
             }
 
             val embedded = retriever.embeddedPicture
             val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                 ?: displayName(context.contentResolver, uri)
             val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                ?: "Cosmograph"
+                ?: DEFAULT_ARTIST
             val artwork = embedded?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
             TrackMetadata(uri, title, artist, artwork)
         } finally {
@@ -951,24 +854,24 @@ private fun loadTrackMetadata(context: android.content.Context, uri: Uri): Track
         TrackMetadata(
             uri = uri,
             title = displayName(context.contentResolver, uri),
-            artist = "Cosmograph",
+            artist = DEFAULT_ARTIST,
             artwork = loadAlbumArt(context, uri)
         )
     }
 }
 
-private fun loadAlbumArt(context: android.content.Context, uri: Uri): Bitmap? {
+private fun loadAlbumArt(context: Context, uri: Uri): Bitmap? {
     return try {
         val retriever = MediaMetadataRetriever()
         try {
-            if (uri.scheme == "content" || uri.scheme == "android.resource") {
-                retriever.setDataSource(context, uri)
-            } else if (uri.scheme == "file") {
-                retriever.setDataSource(uri.path)
-            } else {
-                val savedUri = copyUriToAppStorage(context, uri)
-                if (savedUri == null) return null
-                retriever.setDataSource(context, savedUri)
+            when (uri.scheme) {
+                "content", "android.resource" -> retriever.setDataSource(context, uri)
+                "file" -> retriever.setDataSource(uri.path)
+                else -> {
+                    val savedUri = copyUriToAppStorage(context, uri)
+                    if (savedUri == null) return null
+                    retriever.setDataSource(context, savedUri)
+                }
             }
 
             val embedded = retriever.embeddedPicture ?: return null
