@@ -22,8 +22,10 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,9 +43,15 @@ import com.example.musiccafe.Playlist
 import com.example.musiccafe.copyUriToAppStorage
 import com.example.musiccafe.isSupportedAudioUri
 import com.example.musiccafe.loadDownloadedSongs
+import com.example.musiccafe.loadPlaylists
+import com.example.musiccafe.downloadYoutubeAudio
+import com.example.musiccafe.deleteDownloadedSong
+import com.example.musiccafe.deleteAllDownloadedSongs
 import com.example.musiccafe.loadImportedSongs
 import com.example.musiccafe.persistReadPermission
 import com.example.musiccafe.saveDownloadedSongs
+import com.example.musiccafe.savePlaylists
+import kotlinx.coroutines.launch
 import com.example.musiccafe.saveImportedSongs
 
 @Composable
@@ -52,10 +60,13 @@ fun MusicCafeApp(activity: MainActivity) {
     var selectedItem by remember { mutableStateOf("Home") }
     var isImportScreenOpen by remember { mutableStateOf(false) }
     var importedSongs by remember { mutableStateOf(loadImportedSongs(context)) }
-    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+    var playlists by remember { mutableStateOf(loadPlaylists(context)) }
     var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
     var downloadedSongs by remember { mutableStateOf(loadDownloadedSongs(context)) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(importedSongs) {
         saveImportedSongs(context, importedSongs)
@@ -63,6 +74,10 @@ fun MusicCafeApp(activity: MainActivity) {
 
     LaunchedEffect(downloadedSongs) {
         saveDownloadedSongs(context, downloadedSongs)
+    }
+
+    LaunchedEffect(playlists) {
+        savePlaylists(context, playlists)
     }
 
     val chooseAudioFiles = rememberLauncherForActivityResult(
@@ -124,6 +139,32 @@ fun MusicCafeApp(activity: MainActivity) {
                         }
                     }
                 },
+                onDeleteSong = { uri ->
+                    if (uri in downloadedSongs && !deleteDownloadedSong(uri)) return@LandingContent
+                    importedSongs = importedSongs.filterNot { it == uri }
+                    downloadedSongs = downloadedSongs - uri
+                    playlists = playlists.map { playlist ->
+                        playlist.copy(songs = playlist.songs - uri)
+                    }
+                    if (playingSong?.first == uri) {
+                        activity.getPlaybackService()?.stopPlayback()
+                        playingSong = null
+                        isPlaying = false
+                    }
+                },
+                onDeleteAllDownloads = {
+                    val deletedSongs = deleteAllDownloadedSongs(downloadedSongs)
+                    importedSongs = importedSongs.filterNot { it in deletedSongs }
+                    downloadedSongs = downloadedSongs - deletedSongs
+                    playlists = playlists.map { playlist ->
+                        playlist.copy(songs = playlist.songs - deletedSongs)
+                    }
+                    if (playingSong?.first in deletedSongs) {
+                        activity.getPlaybackService()?.stopPlayback()
+                        playingSong = null
+                        isPlaying = false
+                    }
+                },
                 onOpenImportSongs = {
                     selectedItem = "Import songs"
                     isImportScreenOpen = true
@@ -141,7 +182,42 @@ fun MusicCafeApp(activity: MainActivity) {
                 onChooseGoogleDriveFiles = {
                     isImportScreenOpen = true
                     chooseGoogleDriveFiles.launch(arrayOf("audio/*", "application/octet-stream"))
-                }
+                },
+                onDownloadYoutube = { url ->
+                    coroutineScope.launch {
+                        isDownloading = true
+                        downloadError = null
+                        runCatching { downloadYoutubeAudio(context, url) }
+                            .onSuccess { track ->
+                                importedSongs = (importedSongs + track.uri).distinct()
+                                downloadedSongs = downloadedSongs + track.uri
+                                val youtubePlaylist = playlists.firstOrNull { it.name == "YouTube Downloads" }
+                                playlists = if (youtubePlaylist == null) {
+                                    playlists + Playlist("YouTube Downloads", setOf(track.uri))
+                                } else {
+                                    playlists.map { playlist ->
+                                        if (playlist.name == "YouTube Downloads") {
+                                            playlist.copy(songs = playlist.songs + track.uri)
+                                        } else {
+                                            playlist
+                                        }
+                                    }
+                                }
+                            }
+                            .onFailure {
+                                Log.e("MusicCafeDownload", "YouTube download failed", it)
+                                downloadError = when {
+                                    it.message?.contains("video link", ignoreCase = true) == true -> it.message
+                                    it.message?.contains("no audio", ignoreCase = true) == true -> "This video has no downloadable audio."
+                                    it.message?.contains("URL not accepted", ignoreCase = true) == true -> "YouTube rejected this link. Try a public video link."
+                                    else -> "Could not download this video. Check the link and your internet connection."
+                                }
+                            }
+                        isDownloading = false
+                    }
+                },
+                isDownloading = isDownloading,
+                downloadError = downloadError
             )
         }
         if (playingSong != null) {
@@ -209,11 +285,16 @@ private fun LandingContent(
     onBackToLibrary: () -> Unit,
     onBackFromImport: () -> Unit,
     onPlaySong: (Uri, String) -> Unit,
+    onDeleteSong: (Uri) -> Unit,
+    onDeleteAllDownloads: () -> Unit,
     onOpenImportSongs: () -> Unit,
     onOpenCreatePlaylist: () -> Unit,
     playlists: List<Playlist>,
     onSavePlaylist: (String, Set<Uri>) -> Unit,
-    onChooseGoogleDriveFiles: () -> Unit
+    onChooseGoogleDriveFiles: () -> Unit,
+    onDownloadYoutube: (String) -> Unit,
+    isDownloading: Boolean,
+    downloadError: String?
 ) {
     if (isImportScreenOpen) {
         ImportSongsContent(
@@ -221,14 +302,26 @@ private fun LandingContent(
             importedSongs = importedSongs,
             downloadedSongs = downloadedSongs,
             onChooseAudioFiles = onChooseAudioFiles,
-            onChooseGoogleDriveFiles = onChooseGoogleDriveFiles
+            onChooseGoogleDriveFiles = onChooseGoogleDriveFiles,
+            onDownloadYoutube = onDownloadYoutube,
+            onDeleteAllDownloads = onDeleteAllDownloads,
+            isDownloading = isDownloading,
+            downloadError = downloadError
         )
         return
     }
 
     when (selectedItem) {
         "Library" -> LibraryContent(importedSongs, onOpenSavedSongs, playlists, onOpenCreatePlaylist)
-        "Saved songs" -> SavedSongsContent(importedSongs, onBackToLibrary, onPlaySong, onOpenImportSongs)
+        "Saved songs" -> SavedSongsContent(
+            importedSongs,
+            downloadedSongs,
+            onBackToLibrary,
+            onPlaySong,
+            onOpenImportSongs,
+            onDeleteSong,
+            onDeleteAllDownloads
+        )
         "Create playlist" -> CreatePlaylistContent(importedSongs, downloadedSongs, onSavePlaylist, onBackToLibrary)
         else -> HomeContent(onOpenSavedSongs, importedSongs, playlists)
     }

@@ -35,6 +35,7 @@ fun displayName(contentResolver: ContentResolver, uri: Uri): String {
 private const val APP_STORAGE_PREFS = "musiccafe_preferences"
 private const val IMPORTED_SONGS_KEY = "imported_songs"
 private const val DOWNLOADED_SONGS_KEY = "downloaded_songs"
+private const val PLAYLISTS_KEY = "playlists"
 
 fun persistReadPermission(context: Context, uri: Uri) {
     try {
@@ -78,6 +79,40 @@ fun loadDownloadedSongs(context: Context): Set<Uri> {
         .toSet()
 }
 
+fun deleteDownloadedSong(uri: Uri): Boolean {
+    if (uri.scheme != "file") return false
+    return uri.path?.let { filePath ->
+        val file = File(filePath)
+        !file.exists() || file.delete()
+    } ?: false
+}
+
+fun deleteAllDownloadedSongs(songs: Set<Uri>): Set<Uri> {
+    return songs.filter { deleteDownloadedSong(it) }.toSet()
+}
+
+fun savePlaylists(context: Context, playlists: List<Playlist>) {
+    val encoded = playlists.map { playlist ->
+        playlist.name.replace("|", "_") + "|" + playlist.songs.joinToString(",") { it.toString() }
+    }.toSet()
+    context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+        .edit().putStringSet(PLAYLISTS_KEY, encoded).apply()
+}
+
+fun loadPlaylists(context: Context): List<Playlist> {
+    val values = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+        .getStringSet(PLAYLISTS_KEY, emptySet()) ?: emptySet()
+    return values.mapNotNull { encoded ->
+        val separator = encoded.indexOf('|')
+        if (separator <= 0) return@mapNotNull null
+        val name = encoded.substring(0, separator)
+        val songs = encoded.substring(separator + 1).split(',').mapNotNull { value ->
+            value.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+        }.toSet()
+        Playlist(name, songs)
+    }
+}
+
 fun isSupportedAudioMimeType(mimeType: String?): Boolean {
     if (mimeType.isNullOrBlank()) return false
     val normalized = mimeType.lowercase()
@@ -104,7 +139,17 @@ fun copyUriToAppStorage(context: Context, uri: Uri): Uri? {
     return try {
         val originalName = displayName(context.contentResolver, uri)
         val safeFileName = sanitizeFileName(originalName)
-        val destination = File(context.filesDir, safeFileName)
+        val extension = safeFileName.substringAfterLast('.', "")
+        val baseName = if (extension.isBlank()) safeFileName else safeFileName.removeSuffix(".$extension")
+        var destination = File(context.filesDir, safeFileName)
+        var suffix = 1
+        while (destination.exists()) {
+            destination = File(
+                context.filesDir,
+                if (extension.isBlank()) "$baseName-$suffix" else "$baseName-$suffix.$extension"
+            )
+            suffix++
+        }
         context.contentResolver.openInputStream(uri)?.use { input ->
             destination.outputStream().use { output -> input.copyTo(output) }
         }
@@ -150,6 +195,31 @@ fun loadTrackMetadata(context: Context, uri: Uri): TrackMetadata {
             artist = DEFAULT_ARTIST,
             artwork = loadAlbumArt(context, uri)
         )
+    }
+}
+
+fun loadTrackSummary(context: Context, uri: Uri): TrackMetadata {
+    return try {
+        val retriever = MediaMetadataRetriever()
+        try {
+            when (uri.scheme) {
+                "content", "android.resource" -> retriever.setDataSource(context, uri)
+                "file" -> retriever.setDataSource(uri.path)
+                else -> retriever.setDataSource(uri.toString())
+            }
+            TrackMetadata(
+                uri = uri,
+                title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    ?: displayName(context.contentResolver, uri),
+                artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?: DEFAULT_ARTIST,
+                artwork = null
+            )
+        } finally {
+            retriever.release()
+        }
+    } catch (_: Exception) {
+        TrackMetadata(uri, displayName(context.contentResolver, uri), DEFAULT_ARTIST, null)
     }
 }
 

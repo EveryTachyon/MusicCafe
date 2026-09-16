@@ -23,13 +23,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,18 +50,43 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.musiccafe.loadTrackMetadata
+import com.example.musiccafe.loadTrackSummary
+import com.example.musiccafe.loadAlbumArt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.yield
+import kotlinx.coroutines.withContext
 
 @Composable
 fun SavedSongsContent(
     importedSongs: List<Uri>,
+    downloadedSongs: Set<Uri>,
     onBack: () -> Unit,
     onPlaySong: (Uri, String) -> Unit,
-    onOpenImportSongs: () -> Unit
+    onOpenImportSongs: () -> Unit,
+    onDeleteSong: (Uri) -> Unit,
+    onDeleteAllDownloads: () -> Unit
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
-    val trackData = remember(importedSongs) {
-        importedSongs.map { uri -> loadTrackMetadata(context, uri) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var trackData by remember { mutableStateOf<List<com.example.musiccafe.TrackMetadata>>(emptyList()) }
+    LaunchedEffect(importedSongs) {
+        trackData = importedSongs.map { uri ->
+            com.example.musiccafe.TrackMetadata(
+                uri = uri,
+                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file",
+                artist = "Loading...",
+                artwork = null
+            )
+        }
+        importedSongs.chunked(6).forEach { batch ->
+            val summaries = withContext(Dispatchers.IO) {
+                batch.map { uri -> loadTrackSummary(context, uri) }
+            }
+            val summariesByUri = summaries.associateBy { it.uri }
+            trackData = trackData.map { track -> summariesByUri[track.uri] ?: track }
+            yield()
+        }
     }
     val visibleSongs = trackData.filter { track ->
         searchQuery.isBlank() || track.title.contains(searchQuery, ignoreCase = true) || track.artist.contains(searchQuery, ignoreCase = true)
@@ -97,39 +128,64 @@ fun SavedSongsContent(
             )
         }
         item {
-            Text("Saved songs", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-        }
-        item {
             Row(
-                modifier = Modifier
-                    .border(2.dp, Color(0xFF2B2B2E), RoundedCornerShape(32.dp))
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
-                    .clickable(onClick = onOpenImportSongs),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Outlined.CloudDownload, contentDescription = null, tint = Color.White, modifier = Modifier.height(26.dp))
-                Text("IMPORT SONGS", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Saved songs", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Bold)
+                    Text("${importedSongs.size} songs", color = SoftText, fontSize = 15.sp)
+                }
+                if (trackData.size < importedSongs.size) {
+                    CircularProgressIndicator(
+                        color = AccentGreen,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
-        items(visibleSongs) { track ->
+        item {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(
+                    modifier = Modifier
+                        .border(2.dp, Color(0xFF2B2B2E), RoundedCornerShape(32.dp))
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                        .clickable(onClick = onOpenImportSongs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Outlined.CloudDownload, contentDescription = null, tint = Color.White, modifier = Modifier.height(26.dp))
+                    Text("IMPORT SONGS", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp))
+                }
+                if (downloadedSongs.isNotEmpty()) {
+                    Text(
+                        "DELETE DOWNLOADED FILES (${downloadedSongs.size})",
+                        color = Color(0xFFFF8A80),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .clickable { showDeleteDialog = true }
+                            .padding(8.dp)
+                    )
+                }
+            }
+        }
+        if (importedSongs.isEmpty()) {
+            item {
+                Text("No songs yet. Import audio or download a YouTube video.", color = SoftText, fontSize = 17.sp)
+            }
+        }
+        items(visibleSongs, key = { track -> track.uri.toString() }) { track ->
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { onPlaySong(track.uri, track.title) },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier.size(74.dp).background(Color(0xFF1A1A1C), RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (track.artwork != null) {
-                        Image(
-                            bitmap = track.artwork.asImageBitmap(),
-                            contentDescription = "Album art",
-                            modifier = Modifier.fillMaxSize().background(Color(0xFF3C3C3E), RoundedCornerShape(12.dp))
-                        )
-                    } else {
-                        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF3C3C3E), RoundedCornerShape(12.dp)))
-                    }
-                }
+                SongArtwork(
+                    uri = track.uri,
+                    modifier = Modifier.size(74.dp),
+                    cornerRadius = 12.dp
+                )
 
                 Column(
                     modifier = Modifier.weight(1f).padding(start = 14.dp)
@@ -138,8 +194,58 @@ fun SavedSongsContent(
                     Text(track.artist, color = SoftText, fontSize = 15.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
                 }
 
-                Text("••", color = SoftText, fontSize = 22.sp, modifier = Modifier.padding(start = 12.dp))
+                IconButton(onClick = { onDeleteSong(track.uri) }) {
+                    Icon(
+                        imageVector = Icons.Outlined.DeleteOutline,
+                        contentDescription = if (track.uri in downloadedSongs) {
+                            "Delete downloaded song"
+                        } else {
+                            "Remove song from library"
+                        },
+                        tint = SoftText
+                    )
+                }
             }
+        }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete downloaded files?") },
+            text = { Text("This removes ${downloadedSongs.size} files stored by MusicCafe. Imported files outside MusicCafe will not be touched.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    onDeleteAllDownloads()
+                }) { Text("DELETE") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("CANCEL") }
+            }
+        )
+    }
+}
+
+@Composable
+fun SongArtwork(uri: Uri, modifier: Modifier = Modifier, cornerRadius: androidx.compose.ui.unit.Dp = 12.dp) {
+    val context = LocalContext.current
+    var artwork by remember(uri) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(uri) {
+        artwork = withContext(Dispatchers.IO) { loadAlbumArt(context, uri) }
+    }
+    Box(
+        modifier = modifier.background(Color(0xFF1A1A1C), RoundedCornerShape(cornerRadius)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (artwork != null) {
+            Image(
+                bitmap = artwork!!.asImageBitmap(),
+                contentDescription = "Album art",
+                modifier = Modifier.fillMaxSize().background(Color(0xFF3C3C3E), RoundedCornerShape(cornerRadius))
+            )
+        } else {
+            Icon(Icons.Outlined.LibraryMusic, contentDescription = "Music artwork", tint = SoftText)
         }
     }
 }
@@ -153,10 +259,13 @@ fun MiniPlayer(
     onTogglePlaying: () -> Unit
 ) {
     val context = LocalContext.current
-    val track = remember(songUri) { loadTrackMetadata(context, songUri) }
-    val displayTitle = if (songTitle.isNotBlank()) songTitle else track.title
-    val displayArtist = track.artist
-    val albumArt = track.artwork
+    var track by remember(songUri) { mutableStateOf<com.example.musiccafe.TrackMetadata?>(null) }
+    LaunchedEffect(songUri) {
+        track = withContext(Dispatchers.IO) { loadTrackMetadata(context, songUri) }
+    }
+    val displayTitle = if (songTitle.isNotBlank()) songTitle else track?.title ?: "Loading..."
+    val displayArtist = track?.artist ?: ""
+    val albumArt = track?.artwork
 
     Row(
         modifier = Modifier
