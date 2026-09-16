@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.musiccafe.displayName
+import com.example.musiccafe.Playlist
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -45,12 +46,13 @@ fun CreatePlaylistContent(
     importedSongs: List<Uri>,
     downloadedSongs: Set<Uri>,
     onSavePlaylist: (String, Set<Uri>) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    initialPlaylist: Playlist? = null
 ) {
     val context = LocalContext.current
-    var playlistName by remember { mutableStateOf("") }
-    var selectedSongs by remember(downloadedSongs, importedSongs) {
-        mutableStateOf<Set<Uri>>(emptySet())
+    var playlistName by remember(initialPlaylist) { mutableStateOf(initialPlaylist?.name ?: "") }
+    var selectedSongs by remember(downloadedSongs, importedSongs, initialPlaylist) {
+        mutableStateOf<Set<Uri>>(initialPlaylist?.songs ?: emptySet())
     }
     var songNames by remember {
         mutableStateOf<List<Pair<Uri, String>>>(importedSongs.map { uri -> uri to "Audio file" })
@@ -69,7 +71,7 @@ fun CreatePlaylistContent(
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
-            Text("Create playlist", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Text(if (initialPlaylist == null) "Create playlist" else "Edit playlist", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Bold)
         }
         BasicTextField(
             value = playlistName,

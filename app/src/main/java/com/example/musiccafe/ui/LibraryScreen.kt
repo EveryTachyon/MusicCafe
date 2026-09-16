@@ -35,7 +35,8 @@ fun LibraryContent(
     importedSongs: List<Uri>,
     onOpenSavedSongs: () -> Unit,
     playlists: List<Playlist>,
-    onOpenCreatePlaylist: () -> Unit
+    onOpenCreatePlaylist: () -> Unit,
+    onOpenPlaylist: (Playlist) -> Unit
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item {
@@ -82,8 +83,26 @@ fun LibraryContent(
                 Text("Create playlist", color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(start = 18.dp))
             }
         }
-        items(playlists) { playlist ->
-            Text(playlist.name, color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(horizontal = 22.dp))
+        items(playlists, key = { it.name }) { playlist ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).clickable { onOpenPlaylist(playlist) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (playlist.songs.firstOrNull() != null) {
+                    SongArtwork(playlist.songs.first(), Modifier.size(64.dp), 8.dp)
+                } else {
+                    Box(
+                        modifier = Modifier.size(64.dp).background(CardBackground, RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Outlined.LibraryMusic, contentDescription = "Empty playlist", tint = SoftText)
+                    }
+                }
+                Column(modifier = Modifier.padding(start = 14.dp)) {
+                    Text(playlist.name, color = Color.White, fontSize = 20.sp)
+                    Text("${playlist.songs.size} songs", color = SoftText, fontSize = 14.sp)
+                }
+            }
         }
     }
 }

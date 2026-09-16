@@ -30,7 +30,8 @@ import com.example.musiccafe.Playlist
 fun HomeContent(
     onOpenSavedSongs: () -> Unit,
     importedSongs: List<Uri>,
-    playlists: List<Playlist>
+    playlists: List<Playlist>,
+    onOpenPlaylist: (Playlist) -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(top = 22.dp),
@@ -66,9 +67,20 @@ fun HomeContent(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (importedSongs.isNotEmpty()) {
-                        item { HomeCollectionCard("Saved songs", onOpenSavedSongs) }
+                        item {
+                            HomeCollectionCard(
+                                title = "Saved songs",
+                                onClick = onOpenSavedSongs
+                            )
+                        }
                     }
-                    items(playlists) { playlist -> HomeCollectionCard(playlist.name) }
+                    items(playlists, key = { it.name }) { playlist ->
+                        HomeCollectionCard(
+                            title = playlist.name,
+                            artworkUri = playlist.songs.firstOrNull(),
+                            onClick = { onOpenPlaylist(playlist) }
+                        )
+                    }
                 }
             }
         }
@@ -76,7 +88,7 @@ fun HomeContent(
 }
 
 @Composable
-fun HomeCollectionCard(title: String, onClick: () -> Unit = {}) {
+fun HomeCollectionCard(title: String, artworkUri: Uri? = null, onClick: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .width(250.dp)
@@ -85,12 +97,16 @@ fun HomeCollectionCard(title: String, onClick: () -> Unit = {}) {
             .clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .width(96.dp)
-                .fillMaxHeight()
-                .background(Color(0xFF1F1D23), RoundedCornerShape(12.dp))
-        )
+        if (artworkUri != null) {
+            SongArtwork(artworkUri, Modifier.width(96.dp).fillMaxHeight(), 12.dp)
+        } else {
+            Box(
+                modifier = Modifier.width(96.dp).fillMaxHeight().background(Color(0xFF1F1D23), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("♪", color = SoftText, fontSize = 30.sp)
+            }
+        }
         Text(
             title,
             color = Color.White,

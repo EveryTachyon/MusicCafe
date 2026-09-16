@@ -146,6 +146,16 @@ class MediaPlaybackService : Service() {
      * Get current song information
      */
     fun getCurrentSong(): Pair<Uri, String>? = currentSong
+
+    fun getPlaybackPosition(): Int = runCatching { mediaPlayer?.currentPosition ?: 0 }.getOrDefault(0)
+
+    fun getPlaybackDuration(): Int = runCatching { mediaPlayer?.duration ?: 0 }.getOrDefault(0)
+
+    fun seekTo(position: Int) {
+        mediaPlayer?.let { player ->
+            runCatching { player.seekTo(position.coerceIn(0, player.duration)) }
+        }
+    }
     
     /**
      * Set playback listener for UI updates
