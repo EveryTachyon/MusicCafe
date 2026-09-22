@@ -8,6 +8,8 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 @Suppress("SpellCheckingInspection")
@@ -34,8 +36,11 @@ fun displayName(contentResolver: ContentResolver, uri: Uri): String {
 
 private const val APP_STORAGE_PREFS = "musiccafe_preferences"
 private const val IMPORTED_SONGS_KEY = "imported_songs"
+private const val IMPORTED_SONGS_V2_KEY = "imported_songs_v2"
 private const val DOWNLOADED_SONGS_KEY = "downloaded_songs"
+private const val DOWNLOADED_SONGS_V2_KEY = "downloaded_songs_v2"
 private const val PLAYLISTS_KEY = "playlists"
+private const val PLAYLISTS_V2_KEY = "playlists_v2"
 
 fun persistReadPermission(context: Context, uri: Uri) {
     try {
@@ -46,14 +51,17 @@ fun persistReadPermission(context: Context, uri: Uri) {
 
 fun saveImportedSongs(context: Context, songs: List<Uri>) {
     val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
-    prefs.edit().putStringSet(IMPORTED_SONGS_KEY, songs.map { it.toString() }.toSet()).apply()
+    val encoded = JSONArray().apply { songs.distinct().forEach { put(it.toString()) } }.toString()
+    prefs.edit().putString(IMPORTED_SONGS_V2_KEY, encoded).apply()
 }
 
 fun loadImportedSongs(context: Context): List<Uri> {
     val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
-    return (prefs.getStringSet(IMPORTED_SONGS_KEY, emptySet()) ?: emptySet())
-        .mapNotNull { uriString ->
-            runCatching { Uri.parse(uriString) }.getOrNull()?.also { uri ->
+    val stored = prefs.getString(IMPORTED_SONGS_V2_KEY, null)?.let(::parseUriArray)
+        ?: (prefs.getStringSet(IMPORTED_SONGS_KEY, emptySet()) ?: emptySet()).mapNotNull { value ->
+            runCatching { Uri.parse(value) }.getOrNull()
+        }
+    return stored.map { uri ->
                 if (uri.scheme == "content") {
                     try {
                         context.contentResolver.takePersistableUriPermission(
@@ -63,19 +71,23 @@ fun loadImportedSongs(context: Context): List<Uri> {
                     } catch (_: SecurityException) {
                     }
                 }
+                uri
             }
-        }
 }
 
 fun saveDownloadedSongs(context: Context, songs: Set<Uri>) {
     val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
-    prefs.edit().putStringSet(DOWNLOADED_SONGS_KEY, songs.map { it.toString() }.toSet()).apply()
+    val encoded = JSONArray().apply { songs.forEach { put(it.toString()) } }.toString()
+    prefs.edit().putString(DOWNLOADED_SONGS_V2_KEY, encoded).apply()
 }
 
 fun loadDownloadedSongs(context: Context): Set<Uri> {
     val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
-    return (prefs.getStringSet(DOWNLOADED_SONGS_KEY, emptySet()) ?: emptySet())
-        .mapNotNull { uriString -> runCatching { Uri.parse(uriString) }.getOrNull() }
+    val stored = prefs.getString(DOWNLOADED_SONGS_V2_KEY, null)?.let(::parseUriArray)
+        ?: (prefs.getStringSet(DOWNLOADED_SONGS_KEY, emptySet()) ?: emptySet()).mapNotNull { value ->
+            runCatching { Uri.parse(value) }.getOrNull()
+        }
+    return stored
         .toSet()
 }
 
@@ -92,24 +104,51 @@ fun deleteAllDownloadedSongs(songs: Set<Uri>): Set<Uri> {
 }
 
 fun savePlaylists(context: Context, playlists: List<Playlist>) {
-    val encoded = playlists.map { playlist ->
-        playlist.name.replace("|", "_") + "|" + playlist.songs.joinToString(",") { it.toString() }
-    }.toSet()
+    val encoded = JSONArray().apply {
+        playlists.forEach { playlist ->
+            put(JSONObject().apply {
+                put("name", playlist.name)
+                put("songs", JSONArray().apply { playlist.songs.forEach { put(it.toString()) } })
+            })
+        }
+    }.toString()
     context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
-        .edit().putStringSet(PLAYLISTS_KEY, encoded).apply()
+        .edit().putString(PLAYLISTS_V2_KEY, encoded).apply()
 }
 
 fun loadPlaylists(context: Context): List<Playlist> {
-    val values = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
-        .getStringSet(PLAYLISTS_KEY, emptySet()) ?: emptySet()
-    return values.mapNotNull { encoded ->
-        val separator = encoded.indexOf('|')
+    val prefs = context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+    val encoded = prefs.getString(PLAYLISTS_V2_KEY, null)
+    if (encoded != null) {
+        return runCatching {
+            val values = JSONArray(encoded)
+            (0 until values.length()).mapNotNull { index ->
+                val item = values.optJSONObject(index) ?: return@mapNotNull null
+                val name = item.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val songs = item.optJSONArray("songs")?.let { parseUriArray(it.toString()) }?.toSet() ?: emptySet()
+                Playlist(name, songs)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    val legacyValues = prefs.getStringSet(PLAYLISTS_KEY, emptySet()) ?: emptySet()
+    return legacyValues.mapNotNull { encodedPlaylist ->
+        val separator = encodedPlaylist.indexOf('|')
         if (separator <= 0) return@mapNotNull null
-        val name = encoded.substring(0, separator)
-        val songs = encoded.substring(separator + 1).split(',').mapNotNull { value ->
+        val name = encodedPlaylist.substring(0, separator)
+        val songs = encodedPlaylist.substring(separator + 1).split(',').mapNotNull { value ->
             value.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
         }.toSet()
         Playlist(name, songs)
+    }
+}
+
+private fun parseUriArray(encoded: String): List<Uri> {
+    val values = JSONArray(encoded)
+    return (0 until values.length()).mapNotNull { index ->
+        values.optString(index).takeIf { it.isNotBlank() }?.let { value ->
+            runCatching { Uri.parse(value) }.getOrNull()
+        }
     }
 }
 
@@ -126,13 +165,16 @@ fun isSupportedAudioMimeType(mimeType: String?): Boolean {
 
 fun sanitizeFileName(fileName: String): String {
     val trimmed = fileName.trim()
-    val safe = trimmed.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    val withSafeSeparators = trimmed.replace(Regex("[\\s/\\\\]+"), "_")
+    val safe = withSafeSeparators.replace(Regex("[^A-Za-z0-9._-]"), "")
     return if (safe.isBlank()) "audio_file" else safe
 }
 
 fun isSupportedAudioUri(contentResolver: ContentResolver, uri: Uri): Boolean {
     val mimeType = contentResolver.getType(uri)
-    return isSupportedAudioMimeType(mimeType)
+    if (isSupportedAudioMimeType(mimeType)) return true
+    val fileName = displayName(contentResolver, uri)
+    return isSupportedAudioMimeType(fileName)
 }
 
 fun copyUriToAppStorage(context: Context, uri: Uri): Uri? {
@@ -150,8 +192,9 @@ fun copyUriToAppStorage(context: Context, uri: Uri): Uri? {
             )
             suffix++
         }
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            destination.outputStream().use { output -> input.copyTo(output) }
+        val input = context.contentResolver.openInputStream(uri) ?: return null
+        input.use { source ->
+            destination.outputStream().use { output -> source.copyTo(output) }
         }
         Uri.fromFile(destination)
     } catch (_: Exception) {
