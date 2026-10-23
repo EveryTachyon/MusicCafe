@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Search
@@ -69,16 +70,20 @@ fun SavedSongsContent(
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var trackData by remember { mutableStateOf<List<com.example.musiccafe.TrackMetadata>>(emptyList()) }
+    var selectedTrack by remember { mutableStateOf<com.example.musiccafe.TrackMetadata?>(null) }
+    var trackData by remember(importedSongs) {
+        mutableStateOf(
+            importedSongs.map { uri ->
+                com.example.musiccafe.TrackMetadata(
+                    uri = uri,
+                    title = uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file",
+                    artist = "Loading...",
+                    artwork = null
+                )
+            }
+        )
+    }
     LaunchedEffect(importedSongs) {
-        trackData = importedSongs.map { uri ->
-            com.example.musiccafe.TrackMetadata(
-                uri = uri,
-                title = uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file",
-                artist = "Loading...",
-                artwork = null
-            )
-        }
         importedSongs.chunked(6).forEach { batch ->
             val summaries = withContext(Dispatchers.IO) {
                 batch.map { uri -> loadTrackSummary(context, uri) }
@@ -89,7 +94,10 @@ fun SavedSongsContent(
         }
     }
     val visibleSongs = trackData.filter { track ->
-        searchQuery.isBlank() || track.title.contains(searchQuery, ignoreCase = true) || track.artist.contains(searchQuery, ignoreCase = true)
+        searchQuery.isBlank() ||
+            track.title.contains(searchQuery.trim(), ignoreCase = true) ||
+            track.artist.contains(searchQuery.trim(), ignoreCase = true) ||
+            track.uri.lastPathSegment?.contains(searchQuery.trim(), ignoreCase = true) == true
     }
 
     LazyColumn(
@@ -157,18 +165,6 @@ fun SavedSongsContent(
                     Icon(Icons.Outlined.CloudDownload, contentDescription = null, tint = Color.White, modifier = Modifier.height(26.dp))
                     Text("IMPORT SONGS", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(start = 12.dp))
                 }
-                if (downloadedSongs.isNotEmpty()) {
-                    Text(
-                        "DELETE DOWNLOADED FILES (${downloadedSongs.size})",
-                        color = Color(0xFFFF8A80),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .clickable { showDeleteDialog = true }
-                            .padding(8.dp)
-                    )
-                }
             }
         }
         if (importedSongs.isEmpty()) {
@@ -178,53 +174,73 @@ fun SavedSongsContent(
         }
         items(visibleSongs, key = { track -> track.uri.toString() }) { track ->
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { onPlaySong(track.uri, track.title) },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                SongArtwork(
-                    uri = track.uri,
-                    modifier = Modifier.size(74.dp),
-                    cornerRadius = 12.dp
-                )
-
-                Column(
-                    modifier = Modifier.weight(1f).padding(start = 14.dp)
+                Row(
+                    modifier = Modifier.weight(1f).clickable { onPlaySong(track.uri, track.title) },
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(track.title, color = Color.White, fontSize = 18.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
-                    Text(track.artist, color = SoftText, fontSize = 15.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                    SongArtwork(
+                        uri = track.uri,
+                        modifier = Modifier.size(74.dp),
+                        cornerRadius = 12.dp
+                    )
+
+                    Column(
+                        modifier = Modifier.weight(1f).padding(start = 14.dp)
+                    ) {
+                        Text(track.title, color = Color.White, fontSize = 18.sp, maxLines = 1, fontWeight = FontWeight.SemiBold)
+                        Text(track.artist, color = SoftText, fontSize = 15.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
 
-                IconButton(onClick = { onDeleteSong(track.uri) }) {
-                    Icon(
-                        imageVector = Icons.Outlined.DeleteOutline,
-                        contentDescription = if (track.uri in downloadedSongs) {
-                            "Delete downloaded song"
-                        } else {
-                            "Remove song from library"
-                        },
-                        tint = SoftText
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selectedTrack = track }) {
+                        Icon(
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = "Song options",
+                            tint = SoftText
+                        )
+                    }
+                    IconButton(onClick = { onDeleteSong(track.uri) }) {
+                        Icon(
+                            imageVector = Icons.Outlined.DeleteOutline,
+                            contentDescription = if (track.uri in downloadedSongs) {
+                                "Delete downloaded song"
+                            } else {
+                                "Remove song from library"
+                            },
+                            tint = SoftText
+                        )
+                    }
                 }
             }
         }
     }
 
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete downloaded files?") },
-            text = { Text("This removes ${downloadedSongs.size} files stored by MusicCafe. Imported files outside MusicCafe will not be touched.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    onDeleteAllDownloads()
-                }) { Text("DELETE") }
+    selectedTrack?.let { track ->
+        SongOptionsBottomSheet(
+            title = track.title,
+            artist = track.artist,
+            artworkUri = track.uri,
+            onDismiss = { selectedTrack = null },
+            onPlayNext = { selectedTrack = null },
+            onAddToQueue = { selectedTrack = null },
+            onRemoveFromSaved = {
+                selectedTrack = null
+                onDeleteSong(track.uri)
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("CANCEL") }
-            }
+            onRemoveFromPlaylist = null,
+            onViewAlbum = { selectedTrack = null },
+            onViewArtist = { selectedTrack = null },
+            onAddToPlaylist = { selectedTrack = null },
+            onEditTrack = { selectedTrack = null },
+            onShare = { selectedTrack = null },
+            onNotInterested = { selectedTrack = null }
         )
     }
+
 }
 
 @Composable

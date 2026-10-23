@@ -18,6 +18,7 @@ import com.example.musiccafe.ui.theme.MusicCafeTheme
 class MainActivity : ComponentActivity(), MediaPlaybackService.PlaybackListener {
     private var playbackService: MediaPlaybackService? = null
     private var isBound = false
+    private var playbackStateObserver: ((Pair<android.net.Uri, String>?, Boolean) -> Unit)? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, service: IBinder) {
@@ -74,7 +75,17 @@ class MainActivity : ComponentActivity(), MediaPlaybackService.PlaybackListener 
 
     fun getPlaybackService(): MediaPlaybackService? = playbackService
 
+    fun observePlaybackState(observer: ((Pair<android.net.Uri, String>?, Boolean) -> Unit)?) {
+        playbackStateObserver = observer
+        observer?.invoke(playbackService?.getCurrentSong(), playbackService?.isCurrentlyPlaying() ?: false)
+    }
+
     override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        playbackStateObserver?.invoke(playbackService?.getCurrentSong(), isPlaying)
+    }
+
+    override fun onSongChanged(song: Pair<android.net.Uri, String>) {
+        playbackStateObserver?.invoke(song, playbackService?.isCurrentlyPlaying() ?: false)
     }
 
     override fun onSkipNext() {
@@ -84,6 +95,7 @@ class MainActivity : ComponentActivity(), MediaPlaybackService.PlaybackListener 
     }
 
     override fun onSongCompleted() {
+        playbackStateObserver?.invoke(playbackService?.getCurrentSong(), false)
     }
 
     companion object {

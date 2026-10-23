@@ -16,6 +16,7 @@ import android.os.Binder
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
+import kotlin.random.Random
 
 /**
  * Foreground service for managing music playback with media notifications.
@@ -30,11 +31,19 @@ class MediaPlaybackService : Service() {
         private const val ACTION_PAUSE = "com.example.musiccafe.ACTION_PAUSE"
         private const val ACTION_NEXT = "com.example.musiccafe.ACTION_NEXT"
         private const val ACTION_PREV = "com.example.musiccafe.ACTION_PREV"
+        const val REPEAT_OFF = 0
+        const val REPEAT_ALL = 1
+        const val REPEAT_ONE = 2
     }
     
     private val binder = MediaPlaybackBinder()
     private var mediaPlayer: MediaPlayer? = null
     private var currentSong: Pair<Uri, String>? = null
+    private var playbackQueue = emptyList<Pair<Uri, String>>()
+    private var currentQueueIndex = -1
+    private val previousQueueIndices = mutableListOf<Int>()
+    private var shuffleEnabled = false
+    private var repeatMode = REPEAT_OFF
     private var isPlaying = false
     private var notificationManager: NotificationManager? = null
     private var playbackListener: PlaybackListener? = null
@@ -45,8 +54,8 @@ class MediaPlaybackService : Service() {
                 when (action) {
                     ACTION_PLAY -> resumePlayback()
                     ACTION_PAUSE -> pausePlayback()
-                    ACTION_NEXT -> notifySkipNext()
-                    ACTION_PREV -> notifySkipPrev()
+                    ACTION_NEXT -> skipToNext()
+                    ACTION_PREV -> skipToPrevious()
                 }
             }
         }
@@ -78,13 +87,12 @@ class MediaPlaybackService : Service() {
     fun playSong(uri: Uri, title: String) {
         stopPlayback()
         currentSong = uri to title
+        playbackQueue.indexOfFirst { it.first == uri }.takeIf { it >= 0 }?.let { currentQueueIndex = it }
         
         mediaPlayer = try {
             MediaPlayer.create(this, uri)?.also { player ->
                 player.setOnCompletionListener {
-                    isPlaying = false
-                    playbackListener?.onSongCompleted()
-                    updateNotification()
+                    advanceQueue(onCompletion = true)
                 }
                 player.start()
                 isPlaying = true
@@ -92,8 +100,15 @@ class MediaPlaybackService : Service() {
         } catch (e: Exception) {
             null
         }
-        
+
+        if (mediaPlayer == null) {
+            isPlaying = false
+            playbackListener?.onPlaybackStateChanged(false)
+            return
+        }
+
         updateNotification()
+        playbackListener?.onSongChanged(uri to title)
     }
     
     /**
@@ -135,6 +150,8 @@ class MediaPlaybackService : Service() {
         mediaPlayer = null
         isPlaying = false
         currentSong = null
+        notificationManager?.cancel(NOTIFICATION_ID)
+        stopForeground(STOP_FOREGROUND_REMOVE)
     }
     
     /**
@@ -146,6 +163,84 @@ class MediaPlaybackService : Service() {
      * Get current song information
      */
     fun getCurrentSong(): Pair<Uri, String>? = currentSong
+
+    fun setPlaybackQueue(songs: List<Pair<Uri, String>>) {
+        playbackQueue = songs.distinctBy { it.first }
+        currentQueueIndex = playbackQueue.indexOfFirst { it.first == currentSong?.first }
+        previousQueueIndices.clear()
+    }
+
+    fun isShuffleEnabled(): Boolean = shuffleEnabled
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        shuffleEnabled = enabled
+    }
+
+    fun getRepeatMode(): Int = repeatMode
+
+    fun cycleRepeatMode(): Int {
+        repeatMode = when (repeatMode) {
+            REPEAT_OFF -> REPEAT_ALL
+            REPEAT_ALL -> REPEAT_ONE
+            else -> REPEAT_OFF
+        }
+        return repeatMode
+    }
+
+    fun skipToNext() {
+        advanceQueue(onCompletion = false)
+    }
+
+    fun skipToPrevious() {
+        if (shuffleEnabled && previousQueueIndices.isNotEmpty()) {
+            currentQueueIndex = previousQueueIndices.removeAt(previousQueueIndices.lastIndex)
+            playbackQueue.getOrNull(currentQueueIndex)?.let { playSong(it.first, it.second) }
+        } else if (currentQueueIndex > 0) {
+            currentQueueIndex--
+            playbackQueue.getOrNull(currentQueueIndex)?.let { playSong(it.first, it.second) }
+        } else {
+            seekTo(0)
+        }
+    }
+
+    private fun advanceQueue(onCompletion: Boolean) {
+        if (onCompletion && repeatMode == REPEAT_ONE) {
+            mediaPlayer?.let { player ->
+                player.seekTo(0)
+                player.start()
+                isPlaying = true
+                updateNotification()
+            }
+            return
+        }
+
+        if (playbackQueue.isEmpty() || currentQueueIndex !in playbackQueue.indices) {
+            isPlaying = false
+            playbackListener?.onSongCompleted()
+            updateNotification()
+            return
+        }
+
+        val nextIndex = when {
+            shuffleEnabled && playbackQueue.size > 1 -> {
+                previousQueueIndices.add(currentQueueIndex)
+                playbackQueue.indices.filter { it != currentQueueIndex }.random(Random)
+            }
+            currentQueueIndex < playbackQueue.lastIndex -> currentQueueIndex + 1
+            repeatMode == REPEAT_ALL -> 0
+            else -> -1
+        }
+
+        if (nextIndex < 0) {
+            isPlaying = false
+            playbackListener?.onSongCompleted()
+            updateNotification()
+            return
+        }
+
+        currentQueueIndex = nextIndex
+        playbackQueue[nextIndex].let { playSong(it.first, it.second) }
+    }
 
     fun getPlaybackPosition(): Int = runCatching { mediaPlayer?.currentPosition ?: 0 }.getOrDefault(0)
 
@@ -167,17 +262,6 @@ class MediaPlaybackService : Service() {
     /**
      * Notify skip next action
      */
-    private fun notifySkipNext() {
-        playbackListener?.onSkipNext()
-    }
-    
-    /**
-     * Notify skip previous action
-     */
-    private fun notifySkipPrev() {
-        playbackListener?.onSkipPrev()
-    }
-    
     /**
      * Create notification channel for Android 8+
      */
@@ -312,6 +396,7 @@ class MediaPlaybackService : Service() {
      */
     interface PlaybackListener {
         fun onPlaybackStateChanged(isPlaying: Boolean)
+        fun onSongChanged(song: Pair<Uri, String>)
         fun onSkipNext()
         fun onSkipPrev()
         fun onSongCompleted()

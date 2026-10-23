@@ -58,9 +58,6 @@ fun CreatePlaylistContent(
         mutableStateOf<List<Pair<Uri, String>>>(importedSongs.map { uri -> uri to "Audio file" })
     }
     LaunchedEffect(importedSongs) {
-        songNames = importedSongs.map { uri ->
-            uri to (uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file")
-        }
         songNames = withContext(Dispatchers.IO) {
             importedSongs.map { uri -> uri to displayName(context.contentResolver, uri) }
         }

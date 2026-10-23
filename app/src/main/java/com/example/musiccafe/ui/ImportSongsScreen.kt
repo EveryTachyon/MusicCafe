@@ -25,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,12 +38,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.musiccafe.displayName
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.yield
-import kotlinx.coroutines.withContext
 
 @Composable
 fun ImportSongsContent(
@@ -61,24 +54,6 @@ fun ImportSongsContent(
     val context = LocalContext.current
     var youtubeUrl by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var songNames by remember { mutableStateOf(importedSongs.map { uri -> uri to "Audio file" }) }
-    LaunchedEffect(importedSongs) {
-        songNames = importedSongs.map { uri ->
-            uri to (uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file")
-        }
-        importedSongs.chunked(6).forEach { batch ->
-            val names = withContext(Dispatchers.IO) {
-                batch.map { uri ->
-                    async { uri to displayName(context.contentResolver, uri) }
-                }.awaitAll()
-            }
-            val namesByUri = names.toMap()
-            songNames = songNames.map { (uri, currentName) ->
-                uri to (namesByUri[uri] ?: currentName)
-            }
-            yield()
-        }
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
@@ -136,48 +111,6 @@ fun ImportSongsContent(
                     }
                 )
                 downloadError?.let { Text(it, color = Color(0xFFFF8A80), fontSize = 14.sp) }
-                Text(
-                    text = "DELETE DOWNLOADED FILES (${downloadedSongs.size})",
-                    color = if (downloadedSongs.isEmpty()) SoftText else Color(0xFFFF8A80),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable(enabled = downloadedSongs.isNotEmpty()) {
-                        showDeleteDialog = true
-                    }
-                )
-            }
-        }
-        if (importedSongs.isNotEmpty()) {
-            item {
-                Text(
-                    text = "Music",
-                    color = AccentGreen,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            items(songNames, key = { (uri, _) -> uri.toString() }) { (uri, songName) ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(CardBackground, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = songName, color = Color.White, fontSize = 19.sp)
-                        Text(
-                            text = if (uri in downloadedSongs) "Downloaded" else "Not downloaded",
-                            color = if (uri in downloadedSongs) AccentGreen else SoftText,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    Checkbox(
-                        checked = uri in downloadedSongs,
-                        onCheckedChange = null
-                    )
-                }
             }
         }
     }

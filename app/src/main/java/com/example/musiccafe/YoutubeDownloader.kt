@@ -2,6 +2,10 @@ package com.example.musiccafe
 
 import android.content.Context
 import android.net.Uri
+import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler
+import com.github.hiteshsondhi88.libffmpeg.FFmpeg
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegCommandAlreadyRunningException
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
@@ -69,24 +73,67 @@ suspend fun downloadYoutubeAudio(context: Context, youtubeUrl: String): Download
     val stream = info.audioStreams.maxByOrNull { it.averageBitrate }
         ?: error("This video has no audio stream")
     val safeTitle = sanitizeFileName(info.name).ifBlank { "youtube_audio" }
-    val extension = stream.format?.suffix ?: "m4a"
-    val baseName = "$safeTitle.$extension"
-    var destination = File(context.filesDir, baseName)
-    var suffix = 1
-    while (destination.exists()) {
-        destination = File(context.filesDir, "$safeTitle-$suffix.$extension")
-        suffix++
-    }
+    val sourceExtension = stream.format?.suffix?.lowercase()?.takeIf { it.matches(Regex("[a-z0-9]+")) } ?: "m4a"
+    val sourceFile = File.createTempFile("musiccafe-youtube-", ".$sourceExtension", context.cacheDir)
+    val destination = nextAvailableFile(context.filesDir, safeTitle, "mp3")
     val connection = URL(stream.content).openConnection() as HttpURLConnection
     connection.connectTimeout = CONNECT_TIMEOUT_MS
     connection.readTimeout = READ_TIMEOUT_MS
     try {
         check(connection.responseCode in 200..299) { "Audio download failed (${connection.responseCode})" }
         connection.inputStream.use { input ->
-            destination.outputStream().use { output -> input.copyTo(output) }
+            sourceFile.outputStream().use { output -> input.copyTo(output) }
         }
     } finally {
         connection.disconnect()
     }
+    try {
+        convertToMp3(context, sourceFile, destination)
+    } catch (error: Exception) {
+        destination.delete()
+        throw error
+    } finally {
+        sourceFile.delete()
+    }
     DownloadedTrack(Uri.fromFile(destination), info.name)
 }
+
+private fun nextAvailableFile(directory: File, title: String, extension: String): File {
+    var file = File(directory, "$title.$extension")
+    var suffix = 1
+    while (file.exists()) {
+        file = File(directory, "$title-$suffix.$extension")
+        suffix++
+    }
+    return file
+}
+
+private fun quoteForShell(path: String): String = "'${path.replace("'", "'\\''")}'"
+
+private suspend fun convertToMp3(context: Context, sourceFile: File, destination: File) =
+    kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation ->
+        val command = arrayOf(
+            "-y",
+            "-i", sourceFile.path,
+            "-vn",
+            "-codec:a", "libmp3lame",
+            "-q:a", "2",
+            destination.path
+        )
+        val handler = object : ExecuteBinaryResponseHandler() {
+            override fun onSuccess(message: String?) {
+                if (continuation.isActive) continuation.resume(Unit) {}
+            }
+
+            override fun onFailure(message: String?) {
+                if (continuation.isActive) continuation.resumeWith(Result.failure(IllegalStateException(message ?: "Could not convert YouTube audio to MP3")))
+            }
+        }
+        try {
+            FFmpeg.getInstance(context).execute(command, handler)
+        } catch (error: FFmpegCommandAlreadyRunningException) {
+            continuation.resumeWith(Result.failure(error))
+        } catch (error: FFmpegNotSupportedException) {
+            continuation.resumeWith(Result.failure(error))
+        }
+    }
