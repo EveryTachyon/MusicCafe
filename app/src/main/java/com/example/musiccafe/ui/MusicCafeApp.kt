@@ -3,6 +3,7 @@ package com.example.musiccafe.ui
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -73,6 +74,7 @@ fun MusicCafeApp(activity: MainActivity) {
     var downloadedSongs by remember { mutableStateOf(loadDownloadedSongs(context)) }
     var isDownloading by remember { mutableStateOf(false) }
     var downloadError by remember { mutableStateOf<String?>(null) }
+    var isDevicePickerOpen by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(importedSongs) {
@@ -87,13 +89,10 @@ fun MusicCafeApp(activity: MainActivity) {
         savePlaylists(context, playlists)
     }
 
-    val chooseAudioFiles = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { audioUris ->
-        val validAudioUris = audioUris.filter { uri -> isSupportedAudioUri(context.contentResolver, uri) }
-        validAudioUris.forEach { uri -> persistReadPermission(context, uri) }
-        importedSongs = (importedSongs + validAudioUris).distinct()
-        isImportScreenOpen = true
+    val requestAudioPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        isDevicePickerOpen = granted
     }
 
     val chooseGoogleDriveFiles = rememberLauncherForActivityResult(
@@ -133,12 +132,23 @@ fun MusicCafeApp(activity: MainActivity) {
                     selectedItem = selectedItem,
                     selectedPlaylist = selectedPlaylist,
                     isImportScreenOpen = isImportScreenOpen,
+                    isDevicePickerOpen = isDevicePickerOpen,
                     importedSongs = importedSongs,
                     downloadedSongs = downloadedSongs,
                     recentlyPlayed = recentlyPlayed,
                     onChooseAudioFiles = {
                         isImportScreenOpen = true
-                        chooseAudioFiles.launch(arrayOf("audio/*"))
+                        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            Manifest.permission.READ_MEDIA_AUDIO
+                        } else {
+                            Manifest.permission.READ_EXTERNAL_STORAGE
+                        }
+                        requestAudioPermission.launch(permission)
+                    },
+                    onCloseDevicePicker = { isDevicePickerOpen = false },
+                    onImportDeviceSongs = { audioUris ->
+                        importedSongs = (importedSongs + audioUris).distinct()
+                        isDevicePickerOpen = false
                     },
                     onOpenSavedSongs = {
                     selectedItem = "Saved songs"
@@ -226,8 +236,8 @@ fun MusicCafeApp(activity: MainActivity) {
                     isImportScreenOpen = false
                     },
                     onChooseGoogleDriveFiles = {
-                    isImportScreenOpen = true
-                    chooseGoogleDriveFiles.launch(arrayOf("audio/*", "application/octet-stream"))
+                        isImportScreenOpen = true
+                        chooseGoogleDriveFiles.launch(arrayOf("audio/*"))
                     },
                     onDownloadYoutube = { url ->
                     coroutineScope.launch {
@@ -331,10 +341,13 @@ private fun LandingContent(
     selectedItem: String,
     selectedPlaylist: Playlist?,
     isImportScreenOpen: Boolean,
+    isDevicePickerOpen: Boolean,
     importedSongs: List<Uri>,
     downloadedSongs: Set<Uri>,
     recentlyPlayed: List<Uri>,
     onChooseAudioFiles: () -> Unit,
+    onCloseDevicePicker: () -> Unit,
+    onImportDeviceSongs: (List<Uri>) -> Unit,
     onOpenSavedSongs: () -> Unit,
     onBackToLibrary: () -> Unit,
     onBackFromImport: () -> Unit,
@@ -359,6 +372,9 @@ private fun LandingContent(
             importedSongs = importedSongs,
             downloadedSongs = downloadedSongs,
             onChooseAudioFiles = onChooseAudioFiles,
+            isDevicePickerOpen = isDevicePickerOpen,
+            onCloseDevicePicker = onCloseDevicePicker,
+            onImportDeviceSongs = onImportDeviceSongs,
             onChooseGoogleDriveFiles = onChooseGoogleDriveFiles,
             onDownloadYoutube = onDownloadYoutube,
             onDeleteAllDownloads = onDeleteAllDownloads,
