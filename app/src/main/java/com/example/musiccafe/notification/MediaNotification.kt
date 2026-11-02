@@ -6,9 +6,13 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.media.app.NotificationCompat.MediaStyle
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import com.example.musiccafe.MainActivity
 
 class MediaNotification(private val context: Context) {
@@ -20,6 +24,10 @@ class MediaNotification(private val context: Context) {
         private const val ACTION_PAUSE = "com.example.musiccafe.ACTION_PAUSE"
         private const val ACTION_NEXT = "com.example.musiccafe.ACTION_NEXT"
         private const val ACTION_PREV = "com.example.musiccafe.ACTION_PREV"
+    }
+
+    private val mediaSession = MediaSessionCompat(context, "MusicCafe").apply {
+        isActive = true
     }
 
     fun createChannel() {
@@ -35,7 +43,40 @@ class MediaNotification(private val context: Context) {
         }
     }
 
-    fun build(songTitle: String, isPlaying: Boolean): Notification {
+    fun build(
+        songTitle: String,
+        artist: String,
+        artwork: Bitmap?,
+        isPlaying: Boolean,
+        position: Int,
+        duration: Int
+    ): Notification {
+        mediaSession.setMetadata(
+            MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, songTitle)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration.toLong())
+                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
+                .build()
+        )
+        mediaSession.setPlaybackState(
+            PlaybackStateCompat.Builder()
+                .setActions(
+                    PlaybackStateCompat.ACTION_PLAY or
+                        PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackStateCompat.ACTION_SEEK_TO
+                )
+                .setState(
+                    if (isPlaying) PlaybackStateCompat.STATE_PLAYING
+                    else PlaybackStateCompat.STATE_PAUSED,
+                    position.toLong(),
+                    if (isPlaying) 1f else 0f
+                )
+                .build()
+        )
+
         val playPauseAction = if (isPlaying) {
             NotificationCompat.Action(
                 android.R.drawable.ic_media_pause,
@@ -73,16 +114,26 @@ class MediaNotification(private val context: Context) {
 
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(songTitle)
-            .setContentText("Now Playing")
+            .setContentText(artist)
+            .setLargeIcon(artwork)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(openAppPendingIntent)
             .addAction(previousAction)
             .addAction(playPauseAction)
             .addAction(nextAction)
-            .setStyle(MediaStyle().setShowActionsInCompactView(0, 1, 2))
+            .setStyle(
+                MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(isPlaying)
             .build()
+    }
+
+    fun release() {
+        mediaSession.isActive = false
+        mediaSession.release()
     }
 
     private val notificationManager: NotificationManager

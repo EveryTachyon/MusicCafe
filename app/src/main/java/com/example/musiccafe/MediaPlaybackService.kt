@@ -33,6 +33,8 @@ class MediaPlaybackService : Service() {
     private var repeatEnabled = false
     private lateinit var mediaNotification: MediaNotification
     private var playbackListener: PlaybackListener? = null
+    private var currentArtwork: android.graphics.Bitmap? = null
+    private var currentArtist: String = DEFAULT_ARTIST
     
     private val controlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -64,6 +66,7 @@ class MediaPlaybackService : Service() {
         super.onDestroy()
         unregisterBroadcastReceiver()
         stopPlayback()
+        mediaNotification.release()
         stopForeground(STOP_FOREGROUND_REMOVE)
     }
     
@@ -73,6 +76,9 @@ class MediaPlaybackService : Service() {
     fun playSong(uri: Uri, title: String) {
         stopPlayback()
         currentSong = uri to title
+        val metadata = loadTrackMetadata(this, uri)
+        currentArtwork = metadata.artwork
+        currentArtist = metadata.artist
         
         mediaPlayer = try {
             MediaPlayer.create(this, uri)?.also { player ->
@@ -131,6 +137,8 @@ class MediaPlaybackService : Service() {
         mediaPlayer = null
         isPlaying = false
         currentSong = null
+        currentArtwork = null
+        currentArtist = DEFAULT_ARTIST
     }
     
     /**
@@ -187,7 +195,14 @@ class MediaPlaybackService : Service() {
     private fun updateNotification() {
         val (_, title) = currentSong ?: return
         
-        val notification = mediaNotification.build(title, isPlaying)
+        val notification = mediaNotification.build(
+            songTitle = title,
+            artist = currentArtist,
+            artwork = currentArtwork,
+            isPlaying = isPlaying,
+            position = getPlaybackPosition(),
+            duration = getPlaybackDuration()
+        )
         startForeground(NOTIFICATION_ID, notification)
     }
     
