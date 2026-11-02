@@ -267,7 +267,12 @@ fun MusicCafeApp(activity: MainActivity) {
                 }
             }
         }
-        BottomNavigationBar(selectedItem) { selectedItem = it }
+        BottomNavigationBar(selectedItem) { destination ->
+            isNowPlayingOpen = false
+            isImportScreenOpen = false
+            selectedPlaylist = null
+            selectedItem = destination
+        }
     }
 }
 
