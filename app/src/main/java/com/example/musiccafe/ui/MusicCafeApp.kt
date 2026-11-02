@@ -64,6 +64,8 @@ fun MusicCafeApp(activity: MainActivity) {
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
     var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
+    var isShuffleEnabled by remember { mutableStateOf(false) }
+    var isRepeatEnabled by remember { mutableStateOf(false) }
     var isNowPlayingOpen by remember { mutableStateOf(false) }
     var downloadedSongs by remember { mutableStateOf(loadDownloadedSongs(context)) }
     var isDownloading by remember { mutableStateOf(false) }
@@ -113,8 +115,15 @@ fun MusicCafeApp(activity: MainActivity) {
                     songUri = playingSong!!.first,
                     songTitle = playingSong!!.second,
                     isPlaying = isPlaying,
+                    isShuffleEnabled = isShuffleEnabled,
+                    isRepeatEnabled = isRepeatEnabled,
                     onBack = { isNowPlayingOpen = false },
-                    onPlayingChanged = { isPlaying = it }
+                    onPlayingChanged = { isPlaying = it },
+                    onShuffleChanged = { isShuffleEnabled = it },
+                    onRepeatChanged = {
+                        isRepeatEnabled = it
+                        activity.getPlaybackService()?.setRepeatEnabled(it)
+                    }
                 )
             } else {
                 LandingContent(

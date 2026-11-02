@@ -2,6 +2,7 @@ package com.example.musiccafe.ui
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,8 +44,12 @@ fun NowPlayingContent(
     songUri: Uri,
     songTitle: String,
     isPlaying: Boolean,
+    isShuffleEnabled: Boolean,
+    isRepeatEnabled: Boolean,
     onBack: () -> Unit,
-    onPlayingChanged: (Boolean) -> Unit
+    onPlayingChanged: (Boolean) -> Unit,
+    onShuffleChanged: (Boolean) -> Unit,
+    onRepeatChanged: (Boolean) -> Unit
 ) {
     val service = activity.getPlaybackService()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -95,7 +100,12 @@ fun NowPlayingContent(
         }
         Spacer(Modifier.size(18.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(30.dp)) {
-            Icon(Icons.Outlined.Shuffle, contentDescription = "Shuffle", tint = SoftText, modifier = Modifier.size(24.dp))
+            Icon(
+                Icons.Outlined.Shuffle,
+                contentDescription = if (isShuffleEnabled) "Shuffle on" else "Shuffle off",
+                tint = if (isShuffleEnabled) AccentGreen else SoftText,
+                modifier = Modifier.size(24.dp).clickable { onShuffleChanged(!isShuffleEnabled) }
+            )
             IconButton(onClick = { service?.seekTo((position - 10_000).coerceAtLeast(0)) }) {
                 Text("-10", color = Color.White, fontSize = 14.sp)
             }
@@ -113,7 +123,12 @@ fun NowPlayingContent(
             IconButton(onClick = { service?.seekTo((position + 10_000).coerceAtMost(duration)) }) {
                 Text("+10", color = Color.White, fontSize = 14.sp)
             }
-            Icon(Icons.Outlined.Repeat, contentDescription = "Repeat", tint = SoftText, modifier = Modifier.size(24.dp))
+            Icon(
+                Icons.Outlined.Repeat,
+                contentDescription = if (isRepeatEnabled) "Repeat on" else "Repeat off",
+                tint = if (isRepeatEnabled) AccentGreen else SoftText,
+                modifier = Modifier.size(24.dp).clickable { onRepeatChanged(!isRepeatEnabled) }
+            )
         }
         Spacer(Modifier.weight(1f))
     }

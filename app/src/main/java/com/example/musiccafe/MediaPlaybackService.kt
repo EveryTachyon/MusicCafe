@@ -36,6 +36,7 @@ class MediaPlaybackService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var currentSong: Pair<Uri, String>? = null
     private var isPlaying = false
+    private var repeatEnabled = false
     private var notificationManager: NotificationManager? = null
     private var playbackListener: PlaybackListener? = null
     
@@ -81,6 +82,7 @@ class MediaPlaybackService : Service() {
         
         mediaPlayer = try {
             MediaPlayer.create(this, uri)?.also { player ->
+                player.isLooping = repeatEnabled
                 player.setOnCompletionListener {
                     isPlaying = false
                     playbackListener?.onSongCompleted()
@@ -146,6 +148,13 @@ class MediaPlaybackService : Service() {
      * Get current song information
      */
     fun getCurrentSong(): Pair<Uri, String>? = currentSong
+
+    fun isRepeatEnabled(): Boolean = repeatEnabled
+
+    fun setRepeatEnabled(enabled: Boolean) {
+        repeatEnabled = enabled
+        mediaPlayer?.isLooping = enabled
+    }
 
     fun getPlaybackPosition(): Int = runCatching { mediaPlayer?.currentPosition ?: 0 }.getOrDefault(0)
 
