@@ -36,6 +36,8 @@ private const val APP_STORAGE_PREFS = "musiccafe_preferences"
 private const val IMPORTED_SONGS_KEY = "imported_songs"
 private const val DOWNLOADED_SONGS_KEY = "downloaded_songs"
 private const val PLAYLISTS_KEY = "playlists"
+private const val RECENTLY_PLAYED_KEY = "recently_played"
+private const val MAX_RECENTLY_PLAYED = 5
 
 fun persistReadPermission(context: Context, uri: Uri) {
     try {
@@ -111,6 +113,30 @@ fun loadPlaylists(context: Context): List<Playlist> {
         }.toSet()
         Playlist(name, songs)
     }
+}
+
+fun loadRecentlyPlayed(context: Context): List<Uri> {
+    return context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+        .getString(RECENTLY_PLAYED_KEY, "")
+        ?.split('\n')
+        ?.filter(String::isNotBlank)
+        ?.mapNotNull { value -> runCatching { Uri.parse(value) }.getOrNull() }
+        ?.take(MAX_RECENTLY_PLAYED)
+        ?: emptyList()
+}
+
+fun saveRecentlyPlayed(context: Context, songs: List<Uri>) {
+    context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(RECENTLY_PLAYED_KEY, songs.take(MAX_RECENTLY_PLAYED).joinToString("\n") { it.toString() })
+        .apply()
+}
+
+fun addRecentlyPlayed(context: Context, uri: Uri): List<Uri> {
+    val updated = listOf(uri) + loadRecentlyPlayed(context).filterNot { it == uri }
+    val limited = updated.take(MAX_RECENTLY_PLAYED)
+    saveRecentlyPlayed(context, limited)
+    return limited
 }
 
 fun isSupportedAudioMimeType(mimeType: String?): Boolean {

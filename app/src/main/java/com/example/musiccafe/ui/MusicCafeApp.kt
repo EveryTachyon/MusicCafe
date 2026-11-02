@@ -44,6 +44,8 @@ import com.example.musiccafe.copyUriToAppStorage
 import com.example.musiccafe.isSupportedAudioUri
 import com.example.musiccafe.loadDownloadedSongs
 import com.example.musiccafe.loadPlaylists
+import com.example.musiccafe.loadRecentlyPlayed
+import com.example.musiccafe.addRecentlyPlayed
 import com.example.musiccafe.downloadYoutubeAudio
 import com.example.musiccafe.deleteDownloadedSong
 import com.example.musiccafe.deleteAllDownloadedSongs
@@ -61,6 +63,7 @@ fun MusicCafeApp(activity: MainActivity) {
     var isImportScreenOpen by remember { mutableStateOf(false) }
     var importedSongs by remember { mutableStateOf(loadImportedSongs(context)) }
     var playlists by remember { mutableStateOf(loadPlaylists(context)) }
+    var recentlyPlayed by remember { mutableStateOf(loadRecentlyPlayed(context)) }
     var selectedPlaylist by remember { mutableStateOf<Playlist?>(null) }
     var playingSong by remember { mutableStateOf<Pair<Uri, String>?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -132,6 +135,7 @@ fun MusicCafeApp(activity: MainActivity) {
                     isImportScreenOpen = isImportScreenOpen,
                     importedSongs = importedSongs,
                     downloadedSongs = downloadedSongs,
+                    recentlyPlayed = recentlyPlayed,
                     onChooseAudioFiles = {
                         isImportScreenOpen = true
                         chooseAudioFiles.launch(arrayOf("audio/*"))
@@ -152,6 +156,7 @@ fun MusicCafeApp(activity: MainActivity) {
                     val service = activity.getPlaybackService()
                     if (service != null) {
                         service.playSong(uri, song)
+                        recentlyPlayed = addRecentlyPlayed(context, uri)
                         playingSong = uri to song
                         isNowPlayingOpen = false
                         isPlaying = true
@@ -328,6 +333,7 @@ private fun LandingContent(
     isImportScreenOpen: Boolean,
     importedSongs: List<Uri>,
     downloadedSongs: Set<Uri>,
+    recentlyPlayed: List<Uri>,
     onChooseAudioFiles: () -> Unit,
     onOpenSavedSongs: () -> Unit,
     onBackToLibrary: () -> Unit,
@@ -388,6 +394,13 @@ private fun LandingContent(
                 onPlaySong = onPlaySong
             )
         }
-        else -> HomeContent(onOpenSavedSongs, importedSongs, playlists, onOpenPlaylist)
+        else -> HomeContent(
+            onOpenSavedSongs = onOpenSavedSongs,
+            importedSongs = importedSongs,
+            playlists = playlists,
+            onOpenPlaylist = onOpenPlaylist,
+            recentlyPlayed = recentlyPlayed,
+            onPlaySong = onPlaySong
+        )
     }
 }

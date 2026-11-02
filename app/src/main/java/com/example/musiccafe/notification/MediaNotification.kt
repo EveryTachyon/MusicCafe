@@ -51,14 +51,14 @@ class MediaNotification(private val context: Context) {
         position: Int,
         duration: Int
     ): Notification {
-        mediaSession.setMetadata(
-            MediaMetadataCompat.Builder()
+        val metadataBuilder = MediaMetadataCompat.Builder()
                 .putString(MediaMetadataCompat.METADATA_KEY_TITLE, songTitle)
                 .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
                 .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, duration.toLong())
-                .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
-                .build()
-        )
+        // Clear cached artwork when the next track has no embedded image.
+        metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
+        metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artwork)
+        mediaSession.setMetadata(metadataBuilder.build())
         mediaSession.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setActions(
@@ -112,23 +112,28 @@ class MediaNotification(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(songTitle)
             .setContentText(artist)
-            .setLargeIcon(artwork)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(openAppPendingIntent)
             .addAction(previousAction)
             .addAction(playPauseAction)
             .addAction(nextAction)
-            .setStyle(
-                MediaStyle()
-                    .setMediaSession(mediaSession.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2)
-            )
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(isPlaying)
-            .build()
+            .apply {
+                if (artwork != null) {
+                    setLargeIcon(artwork)
+                    setStyle(
+                        MediaStyle()
+                            .setMediaSession(mediaSession.sessionToken)
+                            .setShowActionsInCompactView(0, 1, 2)
+                    )
+                }
+            }
+
+        return builder.build()
     }
 
     fun release() {
