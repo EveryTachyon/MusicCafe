@@ -107,24 +107,6 @@ fun ImportSongsContent(
             }
         }
         item {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Add music to your library",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "Choose audio files from your device or cloud storage.",
-                    color = SoftText,
-                    fontSize = 15.sp
-                )
-            }
-        }
-        item {
             ImportSourceRow(
                 name = "This device",
                 description = "Browse audio files saved on your phone",
