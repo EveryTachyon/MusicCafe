@@ -80,7 +80,7 @@ fun ImportSongsContent(
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 40.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -109,7 +109,6 @@ fun ImportSongsContent(
         item {
             ImportSourceRow(
                 name = "This device",
-                description = "Browse audio files saved on your phone",
                 icon = Icons.Outlined.AudioFile,
                 onClick = onChooseAudioFiles
             )
@@ -117,7 +116,6 @@ fun ImportSongsContent(
         item {
             ImportSourceRow(
                 name = "Google Drive",
-                description = "Import music from your cloud storage",
                 icon = Icons.Outlined.Cloud,
                 onClick = onChooseGoogleDriveFiles
             )
@@ -217,7 +215,7 @@ private fun DeviceAudioPickerContent(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 28.dp)
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 40.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
@@ -346,7 +344,6 @@ private fun formatDuration(durationMs: Long): String {
 @Composable
 fun ImportSourceRow(
     name: String,
-    description: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
 ) {
@@ -366,9 +363,6 @@ fun ImportSourceRow(
             modifier = Modifier.width(34.dp)
         )
         Spacer(modifier = Modifier.width(18.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-            Text(description, color = SoftText, fontSize = 13.sp)
-        }
+        Text(name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
     }
 }
