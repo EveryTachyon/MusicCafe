@@ -23,10 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Cloud
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Album
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
@@ -49,13 +47,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.musiccafe.displayName
 import com.example.musiccafe.DeviceAudioFile
 import com.example.musiccafe.queryDeviceAudioFiles
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.yield
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -84,25 +78,6 @@ fun ImportSongsContent(
     }
     var youtubeUrl by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var songNames by remember { mutableStateOf(importedSongs.map { uri -> uri to "Audio file" }) }
-    LaunchedEffect(importedSongs) {
-        songNames = importedSongs.map { uri ->
-            uri to (uri.lastPathSegment?.substringAfterLast('/') ?: "Audio file")
-        }
-
-        importedSongs.chunked(6).forEach { batch ->
-            val names = withContext(Dispatchers.IO) {
-                batch.map { uri ->
-                    async { uri to displayName(context.contentResolver, uri) }
-                }.awaitAll()
-            }
-            val namesByUri = names.toMap()
-            songNames = songNames.map { (uri, currentName) ->
-                uri to (namesByUri[uri] ?: currentName)
-            }
-            yield()
-        }
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 28.dp),
@@ -166,31 +141,6 @@ fun ImportSongsContent(
             )
         }
         item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFF102316), RoundedCornerShape(12.dp))
-                    .padding(16.dp),
-                verticalAlignment = Alignment.Top
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    contentDescription = null,
-                    tint = AccentGreen,
-                    modifier = Modifier.padding(top = 1.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Audio only", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "Only MP3, WAV, M4A, AAC, OGG, FLAC, and OPUS files can be added.",
-                        color = SoftText,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        }
-        item {
             Column(
                 modifier = Modifier.fillMaxWidth().background(CardBackground, RoundedCornerShape(16.dp)).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -226,39 +176,6 @@ fun ImportSongsContent(
                         showDeleteDialog = true
                     }
                 )
-            }
-        }
-        if (importedSongs.isNotEmpty()) {
-            item {
-                Text(
-                    text = "Music",
-                    color = AccentGreen,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            items(songNames, key = { (uri, _) -> uri.toString() }) { (uri, songName) ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(CardBackground, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = songName, color = Color.White, fontSize = 19.sp)
-                        Text(
-                            text = if (uri in downloadedSongs) "Downloaded" else "Not downloaded",
-                            color = if (uri in downloadedSongs) AccentGreen else SoftText,
-                            fontSize = 14.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    Checkbox(
-                        checked = uri in downloadedSongs,
-                        onCheckedChange = null
-                    )
-                }
             }
         }
     }
