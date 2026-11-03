@@ -12,20 +12,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Album
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -38,8 +41,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -61,7 +66,7 @@ fun ImportSongsContent(
     onChooseAudioFiles: () -> Unit,
     isDevicePickerOpen: Boolean,
     onCloseDevicePicker: () -> Unit,
-    onImportDeviceSongs: (List<Uri>) -> Unit,
+    onAddDeviceSong: (Uri) -> Unit,
     onChooseGoogleDriveFiles: () -> Unit,
     onDownloadYoutube: (String) -> Unit,
     onDeleteAllDownloads: () -> Unit,
@@ -72,7 +77,8 @@ fun ImportSongsContent(
     if (isDevicePickerOpen) {
         DeviceAudioPickerContent(
             onBack = onCloseDevicePicker,
-            onImport = onImportDeviceSongs
+            importedSongs = importedSongs,
+            onAddSong = onAddDeviceSong
         )
         return
     }
@@ -278,21 +284,37 @@ fun ImportSongsContent(
 @Composable
 private fun DeviceAudioPickerContent(
     onBack: () -> Unit,
-    onImport: (List<Uri>) -> Unit
+    importedSongs: List<Uri>,
+    onAddSong: (Uri) -> Unit
 ) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<DeviceAudioFile>>(emptyList()) }
-    var selectedSongs by remember { mutableStateOf<Set<Uri>>(emptySet()) }
     var searchText by remember { mutableStateOf("") }
+    var selectedFilter by remember { mutableStateOf("All") }
 
     LaunchedEffect(Unit) {
-        songs = withContext(Dispatchers.IO) { queryDeviceAudioFiles(context) }
+        songs = withContext(Dispatchers.IO) {
+            queryDeviceAudioFiles(context).map { song ->
+                song.copy(artwork = com.example.musiccafe.loadTrackMetadata(context, song.uri).artwork)
+            }
+        }
     }
 
-    val filteredSongs = songs.filter { song ->
-        searchText.isBlank() ||
-            song.title.contains(searchText, ignoreCase = true) ||
-            song.artist.contains(searchText, ignoreCase = true)
+    val uniqueSongs = songs.distinctBy { song ->
+        "${song.title.trim().lowercase()}|${song.artist.trim().lowercase()}"
+    }
+    val filteredSongs = uniqueSongs.filter { song ->
+        val isImported = song.uri in importedSongs
+        val matchesFilter = when (selectedFilter) {
+            "Added" -> isImported
+            "Not added" -> !isImported
+            else -> true
+        }
+        matchesFilter && (
+            searchText.isBlank() ||
+                song.title.contains(searchText, ignoreCase = true) ||
+                song.artist.contains(searchText, ignoreCase = true)
+            )
     }
 
     Column(
@@ -304,13 +326,7 @@ private fun DeviceAudioPickerContent(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text("Choose songs", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-                Text("${selectedSongs.size} selected", color = AccentGreen, fontSize = 14.sp)
-            }
-            Button(
-                enabled = selectedSongs.isNotEmpty(),
-                onClick = { onImport(selectedSongs.toList()) }
-            ) {
-                Text("ADD")
+                Text("${importedSongs.size} already added", color = AccentGreen, fontSize = 14.sp)
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -335,7 +351,28 @@ private fun DeviceAudioPickerContent(
             )
         }
         Spacer(modifier = Modifier.height(16.dp))
-        if (songs.isEmpty()) {
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("All", "Not added", "Added").forEach { filter ->
+                Text(
+                    text = filter,
+                    color = if (selectedFilter == filter) Color.Black else SoftText,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .background(
+                            if (selectedFilter == filter) AccentGreen else CardBackground,
+                            RoundedCornerShape(20.dp)
+                        )
+                        .clickable { selectedFilter = filter }
+                        .padding(horizontal = 16.dp, vertical = 9.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        if (uniqueSongs.isEmpty()) {
             Text(
                 "No songs found on this device.",
                 color = SoftText,
@@ -345,35 +382,56 @@ private fun DeviceAudioPickerContent(
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(filteredSongs, key = { it.uri.toString() }) { song ->
-                    val isSelected = song.uri in selectedSongs
+                    val isImported = song.uri in importedSongs
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .background(
-                                if (isSelected) Color(0xFF102316) else CardBackground,
+                                if (isImported) Color(0xFF102316) else CardBackground,
                                 RoundedCornerShape(12.dp)
                             )
                             .clickable {
-                                selectedSongs = if (isSelected) selectedSongs - song.uri
-                                else selectedSongs + song.uri
+                                if (!isImported) {
+                                    onAddSong(song.uri)
+                                }
                             }
                             .padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(
-                            checked = isSelected,
-                            onCheckedChange = {
-                                selectedSongs = if (isSelected) selectedSongs - song.uri
-                                else selectedSongs + song.uri
-                            }
-                        )
+                        if (song.artwork != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = song.artwork.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.Album,
+                                contentDescription = null,
+                                tint = AccentGreen,
+                                modifier = Modifier.size(56.dp).padding(10.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text(song.title, color = Color.White, fontSize = 17.sp)
+                            Text(
+                                text = song.title,
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text(
                                 "${song.artist}  •  ${formatDuration(song.durationMs)}",
                                 color = SoftText,
                                 fontSize = 13.sp
                             )
                         }
+                        Text(
+                            text = if (isImported) "Already added" else "Add",
+                            color = if (isImported) SoftText else AccentGreen,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }

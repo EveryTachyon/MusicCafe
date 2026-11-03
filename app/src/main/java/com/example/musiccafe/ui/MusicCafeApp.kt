@@ -146,9 +146,8 @@ fun MusicCafeApp(activity: MainActivity) {
                         requestAudioPermission.launch(permission)
                     },
                     onCloseDevicePicker = { isDevicePickerOpen = false },
-                    onImportDeviceSongs = { audioUris ->
-                        importedSongs = (importedSongs + audioUris).distinct()
-                        isDevicePickerOpen = false
+                    onAddDeviceSong = { audioUri ->
+                        importedSongs = (importedSongs + audioUri).distinct()
                     },
                     onOpenSavedSongs = {
                     selectedItem = "Saved songs"
@@ -347,7 +346,7 @@ private fun LandingContent(
     recentlyPlayed: List<Uri>,
     onChooseAudioFiles: () -> Unit,
     onCloseDevicePicker: () -> Unit,
-    onImportDeviceSongs: (List<Uri>) -> Unit,
+    onAddDeviceSong: (Uri) -> Unit,
     onOpenSavedSongs: () -> Unit,
     onBackToLibrary: () -> Unit,
     onBackFromImport: () -> Unit,
@@ -374,7 +373,7 @@ private fun LandingContent(
             onChooseAudioFiles = onChooseAudioFiles,
             isDevicePickerOpen = isDevicePickerOpen,
             onCloseDevicePicker = onCloseDevicePicker,
-            onImportDeviceSongs = onImportDeviceSongs,
+            onAddDeviceSong = onAddDeviceSong,
             onChooseGoogleDriveFiles = onChooseGoogleDriveFiles,
             onDownloadYoutube = onDownloadYoutube,
             onDeleteAllDownloads = onDeleteAllDownloads,

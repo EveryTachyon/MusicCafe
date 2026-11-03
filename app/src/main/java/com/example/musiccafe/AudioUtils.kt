@@ -27,7 +27,8 @@ data class DeviceAudioFile(
     val uri: Uri,
     val title: String,
     val artist: String,
-    val durationMs: Long
+    val durationMs: Long,
+    val artwork: Bitmap? = null
 )
 
 fun queryDeviceAudioFiles(context: Context): List<DeviceAudioFile> {
