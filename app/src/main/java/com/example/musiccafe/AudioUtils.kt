@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import java.io.File
 
 @Suppress("SpellCheckingInspection")
@@ -21,6 +22,46 @@ data class TrackMetadata(
     val artist: String,
     val artwork: Bitmap?
 )
+
+data class DeviceAudioFile(
+    val uri: Uri,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val artwork: Bitmap? = null
+)
+
+fun queryDeviceAudioFiles(context: Context): List<DeviceAudioFile> {
+    val projection = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.TITLE,
+        MediaStore.Audio.Media.ARTIST,
+        MediaStore.Audio.Media.DURATION
+    )
+    val songs = mutableListOf<DeviceAudioFile>()
+    context.contentResolver.query(
+        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+        null,
+        "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
+    )?.use { cursor ->
+        val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+        val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+        val artistIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+        val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(idIndex)
+            songs += DeviceAudioFile(
+                uri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString()),
+                title = cursor.getString(titleIndex).orEmpty().ifBlank { "Unknown song" },
+                artist = cursor.getString(artistIndex).orEmpty().ifBlank { "Unknown artist" },
+                durationMs = cursor.getLong(durationIndex)
+            )
+        }
+    }
+    return songs
+}
 
 fun displayName(contentResolver: ContentResolver, uri: Uri): String {
     val nameColumn = OpenableColumns.DISPLAY_NAME
@@ -36,6 +77,8 @@ private const val APP_STORAGE_PREFS = "musiccafe_preferences"
 private const val IMPORTED_SONGS_KEY = "imported_songs"
 private const val DOWNLOADED_SONGS_KEY = "downloaded_songs"
 private const val PLAYLISTS_KEY = "playlists"
+private const val RECENTLY_PLAYED_KEY = "recently_played"
+private const val MAX_RECENTLY_PLAYED = 5
 
 fun persistReadPermission(context: Context, uri: Uri) {
     try {
@@ -113,15 +156,34 @@ fun loadPlaylists(context: Context): List<Playlist> {
     }
 }
 
+fun loadRecentlyPlayed(context: Context): List<Uri> {
+    return context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+        .getString(RECENTLY_PLAYED_KEY, "")
+        ?.split('\n')
+        ?.filter(String::isNotBlank)
+        ?.mapNotNull { value -> runCatching { Uri.parse(value) }.getOrNull() }
+        ?.take(MAX_RECENTLY_PLAYED)
+        ?: emptyList()
+}
+
+fun saveRecentlyPlayed(context: Context, songs: List<Uri>) {
+    context.getSharedPreferences(APP_STORAGE_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(RECENTLY_PLAYED_KEY, songs.take(MAX_RECENTLY_PLAYED).joinToString("\n") { it.toString() })
+        .apply()
+}
+
+fun addRecentlyPlayed(context: Context, uri: Uri): List<Uri> {
+    val updated = listOf(uri) + loadRecentlyPlayed(context).filterNot { it == uri }
+    val limited = updated.take(MAX_RECENTLY_PLAYED)
+    saveRecentlyPlayed(context, limited)
+    return limited
+}
+
 fun isSupportedAudioMimeType(mimeType: String?): Boolean {
     if (mimeType.isNullOrBlank()) return false
     val normalized = mimeType.lowercase()
-    return normalized.startsWith("audio/") ||
-        normalized.endsWith(".mp3") ||
-        normalized.endsWith(".wav") ||
-        normalized.endsWith(".m4a") ||
-        normalized.endsWith(".aac") ||
-        normalized.endsWith(".ogg")
+    return normalized.startsWith("audio/")
 }
 
 fun sanitizeFileName(fileName: String): String {
@@ -132,8 +194,14 @@ fun sanitizeFileName(fileName: String): String {
 
 fun isSupportedAudioUri(contentResolver: ContentResolver, uri: Uri): Boolean {
     val mimeType = contentResolver.getType(uri)
-    return isSupportedAudioMimeType(mimeType)
+    if (isSupportedAudioMimeType(mimeType)) return true
+    if (!mimeType.isNullOrBlank()) return false
+
+    val name = displayName(contentResolver, uri).lowercase()
+    return AUDIO_EXTENSIONS.any { extension -> name.endsWith(extension) }
 }
+
+private val AUDIO_EXTENSIONS = setOf(".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".opus")
 
 fun copyUriToAppStorage(context: Context, uri: Uri): Uri? {
     return try {
