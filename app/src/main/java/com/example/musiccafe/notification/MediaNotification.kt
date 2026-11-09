@@ -27,6 +27,15 @@ class MediaNotification(private val context: Context) {
     }
 
     private val mediaSession = MediaSessionCompat(context, "MusicCafe").apply {
+        setCallback(object : MediaSessionCompat.Callback() {
+            override fun onPlay() = sendControlAction(ACTION_PLAY)
+
+            override fun onPause() = sendControlAction(ACTION_PAUSE)
+
+            override fun onSkipToNext() = sendControlAction(ACTION_NEXT)
+
+            override fun onSkipToPrevious() = sendControlAction(ACTION_PREV)
+        })
         isActive = true
     }
 
@@ -152,5 +161,9 @@ class MediaNotification(private val context: Context) {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    private fun sendControlAction(action: String) {
+        context.sendBroadcast(Intent(action).setPackage(context.packageName))
     }
 }
